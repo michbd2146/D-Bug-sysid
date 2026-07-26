@@ -1,7 +1,3 @@
-// Copyright (c) FIRST and other WPILib contributors.
-// Open Source Software; you can modify and/or share it under the terms of
-// the WPILib BSD license file in the root directory of this project.
-
 #include "wpi/sysid/view/AnalyzerPlot.hpp"
 
 #include <algorithm>
@@ -9,12 +5,14 @@
 #include <format>
 #include <functional>
 #include <mutex>
+#include <numbers>
 #include <utility>
 #include <vector>
 
 #include "wpi/sysid/Util.hpp"
 #include "wpi/sysid/analysis/AnalysisManager.hpp"
 #include "wpi/sysid/analysis/ArmSim.hpp"
+#include "wpi/sysid/analysis/BodeAnalysis.hpp"
 #include "wpi/sysid/analysis/ElevatorSim.hpp"
 #include "wpi/sysid/analysis/FilteringUtils.hpp"
 #include "wpi/sysid/analysis/SimpleMotorSim.hpp"
@@ -25,6 +23,7 @@ using namespace sysid;
 static ImPlotPoint Getter(int idx, void* data) {
   return static_cast<ImPlotPoint*>(data)[idx];
 }
+
 
 template <typename Model>
 static std::vector<std::vector<ImPlotPoint>> PopulateTimeDomainSim(
@@ -373,6 +372,23 @@ void AnalyzerPlot::SetData(
   m_RMSE = std::sqrt(simSquaredErrorSum / timeSeriesPoints);
   m_accelRSquared =
       1 - m_RMSE / std::sqrt(squaredVariationSum / timeSeriesPoints);
+
+  // Compute Frequency Response (Bode Analysis)
+  m_bodePlotData.Clear();
+  auto bodeResult = sysid::CalculateBodeAnalysis(Kv, Ka);
+  if (bodeResult.isValid) {
+    m_bodePlotData.isValid = true;
+    m_bodePlotData.bandwidthHz = bodeResult.bandwidthHz;
+    m_bodePlotData.timeConstantSec = bodeResult.timeConstantSec;
+
+    for (const auto& pt : bodeResult.points) {
+      m_bodePlotData.magnitudeData.emplace_back(pt.frequencyRadPerSec,
+                                                pt.magnitudeDb);
+      m_bodePlotData.phaseData.emplace_back(pt.frequencyRadPerSec,
+                                            pt.phaseDeg);
+    }
+  }
+
   FitPlots();
 }
 
@@ -399,6 +415,43 @@ static void PlotSimData(std::vector<std::vector<ImPlotPoint>>& data) {
   }
 }
 
+void AnalyzerPlot::DisplayBodePlots(const ImVec2& fullSize) {
+  if (!m_bodePlotData.isValid) {
+    ImGui::TextDisabled("Frequency response (Bode plot) unavailable for invalid/negative gains.");
+    return;
+  }
+
+  ImGui::Text("System Bandwidth: %.2f Hz (%.2f rad/s) | Time Constant: %.2f ms",
+              m_bodePlotData.bandwidthHz,
+              m_bodePlotData.bandwidthHz * 2.0 * std::numbers::pi,
+              m_bodePlotData.timeConstantSec * 1000.0);
+
+  ImVec2 plotSize = fullSize;
+  plotSize.y = (plotSize.y - ImGui::GetFontSize() * 3) / 2.0f;
+
+  // Bode Magnitude Plot
+  if (ImPlot::BeginPlot("Bode Magnitude (dB)", plotSize)) {
+    ImPlot::SetupAxis(ImAxis_X1, "Frequency (rad/s)");
+    ImPlot::SetupAxisScale(ImAxis_X1, ImPlotScale_Log10);
+    ImPlot::SetupAxis(ImAxis_Y1, "Magnitude (dB)", ImPlotAxisFlags_NoGridLines);
+    ImPlot::PlotLineG("Magnitude", Getter, m_bodePlotData.magnitudeData.data(),
+                      m_bodePlotData.magnitudeData.size(),
+                      {ImPlotProp_LineWeight, 2.0});
+    ImPlot::EndPlot();
+  }
+
+  // Bode Phase Plot
+  if (ImPlot::BeginPlot("Bode Phase (deg)", plotSize)) {
+    ImPlot::SetupAxis(ImAxis_X1, "Frequency (rad/s)");
+    ImPlot::SetupAxisScale(ImAxis_X1, ImPlotScale_Log10);
+    ImPlot::SetupAxis(ImAxis_Y1, "Phase (deg)", ImPlotAxisFlags_NoGridLines);
+    ImPlot::PlotLineG("Phase", Getter, m_bodePlotData.phaseData.data(),
+                      m_bodePlotData.phaseData.size(),
+                      {ImPlotProp_LineWeight, 2.0});
+    ImPlot::EndPlot();
+  }
+}
+
 bool AnalyzerPlot::DisplayPlots() {
   std::unique_lock lock(m_mutex, std::defer_lock);
 
@@ -408,7 +461,27 @@ bool AnalyzerPlot::DisplayPlots() {
     return false;
   }
 
-  ImVec2 plotSize = ImGui::GetContentRegionAvail();
+  // Tab selector for Time Domain vs Bode Plot
+  if (ImGui::BeginTabBar("PlotTypeTabBar")) {
+    if (ImGui::BeginTabItem("Time-Domain & Regression")) {
+      m_plotTab = 0;
+      ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Frequency Response (Bode)")) {
+      m_plotTab = 1;
+      ImGui::EndTabItem();
+    }
+    ImGui::EndTabBar();
+  }
+
+  ImVec2 fullSize = ImGui::GetContentRegionAvail();
+
+  if (m_plotTab == 1) {
+    DisplayBodePlots(fullSize);
+    return true;
+  }
+
+  ImVec2 plotSize = fullSize;
 
   // Fit two plots horizontally
   plotSize.x = (plotSize.x - ImGui::GetStyle().ItemSpacing.x) / 2.f;

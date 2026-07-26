@@ -23,6 +23,7 @@ class Storage;
 namespace wpi {
 namespace log {
 class DataLogReaderEntry;
+class DataLogReaderThread;
 }  // namespace log
 namespace util {
 class Logger;
@@ -36,8 +37,23 @@ namespace sysid {
 class DataSelector : public wpi::glass::View {
  public:
   /**
+   * Represents a SysId routine detected in a log file. Carries the
+   * matched log entries for the test state, voltage, position, and velocity.
+   */
+  struct DetectedRoutine {
+    /// Human-readable routine name (the {logName} part from
+    /// "sysid-test-state-{logName}").
+    std::string name;
+    const wpi::log::DataLogReaderEntry* testStateEntry = nullptr;
+    const wpi::log::DataLogReaderEntry* voltageEntry = nullptr;
+    const wpi::log::DataLogReaderEntry* positionEntry = nullptr;
+    const wpi::log::DataLogReaderEntry* velocityEntry = nullptr;
+  };
+
+  /**
    * Creates a data selector widget
    *
+   * @param storage Glass Storage
    * @param logger The program logger
    */
   explicit DataSelector(wpi::glass::Storage& storage, wpi::util::Logger& logger)
@@ -53,6 +69,14 @@ class DataSelector : public wpi::glass::View {
    * class keeps references to DataLogReaderEntry objects.
    */
   void Reset();
+
+  /**
+   * Scans the given DataLogReaderThread for SysId routine entries and
+   * populates m_detectedRoutines. Call this whenever a new log is loaded.
+   *
+   * @param reader The log reader to scan. May be nullptr to clear state.
+   */
+  void SetReader(wpi::log::DataLogReaderThread* reader);
 
   /**
    * Called when new test data is loaded.
@@ -84,7 +108,16 @@ class DataSelector : public wpi::glass::View {
   std::set<std::string> m_executedTests;
   bool m_testCountValidated = false;
 
+  // Auto-detected SysId routines
+  std::vector<DetectedRoutine> m_detectedRoutines;
+  int m_selectedRoutine = 0;
+
   static Tests LoadTests(const wpi::log::DataLogReaderEntry& testStateEntry);
   TestData BuildTestData();
+
+  /// Displays the auto-detection section.
+  void DisplayAutoDetect();
+  /// Loads a specific auto-detected routine by index into the manual fields.
+  void ApplyDetectedRoutine(int index);
 };
 }  // namespace sysid

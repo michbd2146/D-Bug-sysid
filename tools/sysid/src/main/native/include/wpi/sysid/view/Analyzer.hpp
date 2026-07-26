@@ -198,6 +198,13 @@ class Analyzer : public wpi::glass::View {
    */
   void HandleError(std::string_view msg);
 
+  /**
+   * Generates a WPILib Java + C++ code snippet with the current gains that
+   * the user can paste into their robot program. Returns the snippet string
+   * and also copies it to the system clipboard.
+   */
+  std::string GenerateCodeSnippet() const;
+
   // State of the Display GUI
   AnalyzerState m_state = AnalyzerState::kWaitingForData;
 
@@ -245,5 +252,8 @@ class Analyzer : public wpi::glass::View {
 
   std::atomic<bool> m_abortDataPrep{false};
   std::thread m_dataThread;
+
+  // Clipboard copy timestamp for displaying "Copied!" flash feedback.
+  double m_lastCopiedAt = -10.0;
 };
 }  // namespace sysid

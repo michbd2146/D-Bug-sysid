@@ -59,6 +59,8 @@ void LogLoader::Display() {
       m_reader =
           std::make_unique<wpi::log::DataLogReaderThread>(std::move(reader));
       m_entryTree.clear();
+      // Reset load signal status for the newly opened datalog file so auto-detection can trigger when scanning finishes.
+      m_loadFired = false;
     }
     m_opener.reset();
   }
@@ -87,6 +89,13 @@ void LogLoader::Display() {
 
   if (!m_reader->IsDone()) {
     return;
+  }
+
+  // Fire the load signal exactly once after the reader finishes scanning all log entries.
+  // This allows DataSelector to auto-scan the parsed entries for SysId routines.
+  if (!m_loadFired) {
+    load(m_reader.get());
+    m_loadFired = true;
   }
 
   bool refilter = ImGui::InputText("Filter", &m_filter);

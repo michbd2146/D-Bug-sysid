@@ -56,12 +56,20 @@ class LogLoader : public wpi::glass::View {
    */
   wpi::util::sig::Signal<> unload;
 
+  /**
+   * Signal called after a new log file is successfully loaded. The argument
+   * is a non-owning pointer to the internal DataLogReaderThread; it remains
+   * valid until the next unload/load cycle.
+   */
+  wpi::util::sig::Signal<wpi::log::DataLogReaderThread*> load;
+
  private:
   // Logger& m_logger;
 
   std::string m_filename;
   std::unique_ptr<pfd::open_file> m_opener;
   std::unique_ptr<wpi::log::DataLogReaderThread> m_reader;
+  bool m_loadFired = false;
 
   std::string m_error;
 
@@ -80,3 +88,4 @@ class LogLoader : public wpi::glass::View {
   void DisplayEntryTree(const std::vector<EntryTreeNode>& nodes);
 };
 }  // namespace sysid
+

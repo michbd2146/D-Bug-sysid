@@ -24,6 +24,8 @@
 using namespace sysid;
 
 static constexpr const char* kAnalysisTypes[] = {"Elevator", "Arm", "Simple"};
+// Prefix for the test-state string entry produced by SysIdRoutineLog.
+static constexpr std::string_view kTestStatePrefix = "sysid-test-state-";
 
 static bool EmitEntryTarget(const char* name, bool isString,
                             const wpi::log::DataLogReaderEntry** entry) {
@@ -84,6 +86,9 @@ void DataSelector::Display() {
     return;
   }
 
+  // Show auto-detected routines section when available.
+  DisplayAutoDetect();
+
   if (EmitEntryTarget("Test State", true, &m_testStateEntry)) {
     m_testsFuture =
         std::async(std::launch::async, [testStateEntry = m_testStateEntry] {
@@ -94,6 +99,7 @@ void DataSelector::Display() {
   if (!m_testStateEntry) {
     return;
   }
+
 
   if (m_testsFuture.valid() &&
       m_testsFuture.wait_for(0s) == std::future_status::ready) {
@@ -188,6 +194,159 @@ void DataSelector::Reset() {
   m_positionEntry = nullptr;
   m_voltageEntry = nullptr;
   m_testdataFuture = {};
+  m_testdataStats.clear();
+  m_executedTests.clear();
+  m_testCountValidated = false;
+  m_missingTests.clear();
+  m_detectedRoutines.clear();
+  m_selectedRoutine = 0;
+}
+
+void DataSelector::SetReader(wpi::log::DataLogReaderThread* reader) {
+  Reset();
+  if (!reader) {
+    return;
+  }
+
+  // Collect all entries in a single lock acquisition to avoid nested mutex
+  // re-locking deadlocks (since ForEachEntryName acquires DataLogReaderThread's mutex for its full duration).
+  std::vector<const wpi::log::DataLogReaderEntry*> allEntries;
+  reader->ForEachEntryName(
+      [&](const wpi::log::DataLogReaderEntry& entry) {
+        allEntries.push_back(&entry);
+      });
+
+  // First pass: find all test-state (string) entries that follow the SysId
+  // naming convention "sysid-test-state-{routineName}".
+  std::vector<DetectedRoutine> candidates;
+  for (const auto* entry : allEntries) {
+    if (entry->type != "string") {
+      continue;
+    }
+    if (!wpi::util::starts_with(entry->name, kTestStatePrefix)) {
+      continue;
+    }
+    std::string_view routineName =
+        std::string_view{entry->name}.substr(kTestStatePrefix.size());
+    DetectedRoutine routine;
+    routine.name = std::string{routineName};
+    routine.testStateEntry = entry;
+    candidates.emplace_back(std::move(routine));
+  }
+
+  // Second pass: for each candidate, look up motor data entries by name.
+  // The naming format is "{field}-{motorName}-{routineName}" (double/float).
+  // We pick the FIRST matching entry for each field so that single-motor
+  // routines are always detected, and multi-motor setups show the first motor.
+  for (auto& routine : candidates) {
+    std::string suffix = std::format("-{}", routine.name);
+    for (const auto* dataEntry : allEntries) {
+      if (dataEntry->type != "double" && dataEntry->type != "float") {
+        continue;
+      }
+      if (!wpi::util::ends_with(dataEntry->name, suffix)) {
+        continue;
+      }
+      // Identify the field by the first token before the first '-'.
+      auto [field, rest] = wpi::util::split(dataEntry->name, '-');
+      if (field == "voltage" && !routine.voltageEntry) {
+        routine.voltageEntry = dataEntry;
+      } else if (field == "position" && !routine.positionEntry) {
+        routine.positionEntry = dataEntry;
+      } else if (field == "velocity" && !routine.velocityEntry) {
+        routine.velocityEntry = dataEntry;
+      }
+    }
+    m_detectedRoutines.emplace_back(std::move(routine));
+  }
+
+  WPI_INFO(m_logger, "Auto-detected {} SysId routine(s)",
+           m_detectedRoutines.size());
+}
+
+void DataSelector::ApplyDetectedRoutine(int index) {
+  if (index < 0 ||
+      static_cast<size_t>(index) >= m_detectedRoutines.size()) {
+    return;
+  }
+  const auto& r = m_detectedRoutines[index];
+  // Wipe existing manual selection and reload with detected entries.
+  m_tests.clear();
+  m_executedTests.clear();
+  m_testCountValidated = false;
+  m_missingTests.clear();
+  m_testsFuture = {};
+
+  m_testStateEntry = r.testStateEntry;
+  m_voltageEntry = r.voltageEntry;
+  m_positionEntry = r.positionEntry;
+  m_velocityEntry = r.velocityEntry;
+
+  if (m_testStateEntry) {
+    // Kick off async test loading just like DnD does.
+    m_testsFuture = std::async(std::launch::async,
+                               [testStateEntry = m_testStateEntry] {
+                                 return LoadTests(*testStateEntry);
+                               });
+  }
+
+  WPI_INFO(m_logger, "Applied detected routine: {}",
+           m_detectedRoutines[index].name);
+}
+
+void DataSelector::DisplayAutoDetect() {
+  if (m_detectedRoutines.empty()) {
+    return;
+  }
+
+  ImGui::SeparatorText("Auto-Detected Routines");
+
+  // Build combo labels.
+  std::vector<std::string> labels;
+  labels.reserve(m_detectedRoutines.size());
+  for (const auto& r : m_detectedRoutines) {
+    bool complete = r.voltageEntry && r.positionEntry && r.velocityEntry;
+    labels.emplace_back(complete ? r.name
+                                 : std::format("{} (incomplete)", r.name));
+  }
+
+  // Render combo.
+  ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+  if (ImGui::BeginCombo("Routine##autodetect",
+                        labels[m_selectedRoutine].c_str())) {
+    for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
+      if (ImGui::Selectable(labels[i].c_str(), i == m_selectedRoutine)) {
+        m_selectedRoutine = i;
+      }
+      if (i == m_selectedRoutine) {
+        ImGui::SetItemDefaultFocus();
+      }
+    }
+    ImGui::EndCombo();
+  }
+
+  ImGui::SameLine();
+  const auto& selected = m_detectedRoutines[m_selectedRoutine];
+  bool canLoad = selected.testStateEntry && selected.voltageEntry &&
+                 selected.positionEntry && selected.velocityEntry;
+  if (!canLoad) {
+    ImGui::BeginDisabled();
+  }
+  if (ImGui::Button("Auto-load")) {
+    ApplyDetectedRoutine(m_selectedRoutine);
+  }
+  if (!canLoad) {
+    ImGui::EndDisabled();
+    sysid::CreateTooltip(
+        "Could not find all required entries (voltage, position, velocity) "
+        "for this routine. Try manually assigning them below.");
+  } else {
+    sysid::CreateTooltip(
+        "Automatically assigns the detected voltage, position, velocity, "
+        "and test-state entries for this SysId routine.");
+  }
+
+  ImGui::SeparatorText("Manual Assignment");
 }
 
 DataSelector::Tests DataSelector::LoadTests(

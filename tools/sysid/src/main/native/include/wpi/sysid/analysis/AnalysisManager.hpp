@@ -309,9 +309,11 @@ class AnalysisManager {
    * @return Velocity delay in milliseconds
    */
   wpi::units::millisecond_t GetVelocityDelay() const {
+    // Divided by m_velocityDelays.size() instead of m_positionDelays.size() to avoid
+    // incorrect mean velocity measurement delay calculation when sample counts differ.
     return std::accumulate(m_velocityDelays.begin(), m_velocityDelays.end(),
                            0_s) /
-           m_positionDelays.size();
+           m_velocityDelays.size();
   }
 
   /**

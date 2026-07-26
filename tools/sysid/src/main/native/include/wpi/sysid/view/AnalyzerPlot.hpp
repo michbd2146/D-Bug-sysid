@@ -201,5 +201,24 @@ class AnalyzerPlot {
 
   double m_RMSE;
   double m_accelRSquared;
+
+  // Bode frequency response plot data
+  int m_plotTab = 0;  // 0: Time Domain & Regression, 1: Frequency Response (Bode)
+  struct BodePlotData {
+    std::vector<ImPlotPoint> magnitudeData;
+    std::vector<ImPlotPoint> phaseData;
+    std::array<ImPlotPoint, 2> cutoffLineMag;
+    std::array<ImPlotPoint, 2> cutoffLinePhase;
+    bool isValid = false;
+    double bandwidthHz = 0.0;
+    double timeConstantSec = 0.0;
+    void Clear() {
+      magnitudeData.clear();
+      phaseData.clear();
+      isValid = false;
+    }
+  } m_bodePlotData;
+
+  void DisplayBodePlots(const ImVec2& size);
 };
 }  // namespace sysid
