@@ -47,7 +47,7 @@ struct Vector2d {
   explicit operator ImVec2() const { return ImVec2{x, y}; }
 };
 
-// App window size
+// App window size (reference; actual display size may differ)
 inline constexpr Vector2d kAppWindowSize{1280, 720};
 
 // Menubar height
@@ -95,4 +95,48 @@ inline constexpr Vector2d kDiagnosticPlotWindowSize = kRightColSize;
 
 // Text box width as a multiple of the font size
 inline constexpr int kTextBoxWidthMultiple = 10;
+
+// ---------------------------------------------------------------------------
+// Default GridCell assignments (used by GridLayout on first launch / Reset)
+//
+// The grid is GridLayout::kGridCols × GridLayout::kGridRows (64 × 35) cells.
+// At the reference resolution of 1280×720 each cell is 20×20 px.
+// GridLayout scales these assignments to any display size automatically.
+//
+// Column mapping at 1280×720 (cellW = 20 px):
+//   Left   column : col  0 – 15  (cols 0-15,  320 px  ≈ 310 px left col)
+//   Center column : col 16 – 33  (cols 16-33, 360 px  ≈ 360 px center col)
+//   Right  column : col 34 – 63  (cols 34-63, 600 px  ≈ 590 px right col)
+// ---------------------------------------------------------------------------
+
+/// Default GridCell for the "Log Loader" window (left column, top)
+inline constexpr int kLogLoaderDefaultCol     = 0;
+inline constexpr int kLogLoaderDefaultRow     = 0;
+inline constexpr int kLogLoaderDefaultColSpan = 16;
+inline constexpr int kLogLoaderDefaultRowSpan = 22;
+
+/// Default GridCell for the "Data Selector" window (left column, bottom)
+inline constexpr int kDataSelectorDefaultCol     = 0;
+inline constexpr int kDataSelectorDefaultRow     = 22;
+inline constexpr int kDataSelectorDefaultColSpan = 16;
+inline constexpr int kDataSelectorDefaultRowSpan = 13;
+
+/// Default GridCell for the "Analyzer" window (center column, top)
+inline constexpr int kAnalyzerDefaultCol     = 16;
+inline constexpr int kAnalyzerDefaultRow     = 0;
+inline constexpr int kAnalyzerDefaultColSpan = 18;
+inline constexpr int kAnalyzerDefaultRowSpan = 25;
+
+/// Default GridCell for the "Program Log" window (center column, bottom)
+inline constexpr int kProgramLogDefaultCol     = 16;
+inline constexpr int kProgramLogDefaultRow     = 25;
+inline constexpr int kProgramLogDefaultColSpan = 18;
+inline constexpr int kProgramLogDefaultRowSpan = 10;
+
+/// Default GridCell for the "Diagnostic Plots" window (right column, full height)
+inline constexpr int kDiagnosticPlotsDefaultCol     = 34;
+inline constexpr int kDiagnosticPlotsDefaultRow     = 0;
+inline constexpr int kDiagnosticPlotsDefaultColSpan = 30;
+inline constexpr int kDiagnosticPlotsDefaultRowSpan = 35;
+
 }  // namespace sysid

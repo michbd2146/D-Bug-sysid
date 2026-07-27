@@ -27,8 +27,10 @@
 #include "wpi/datalog/DataLogReaderThread.hpp"
 #include "wpi/gui/wpigui.hpp"
 #include "wpi/gui/wpigui_openurl.hpp"
+#include "wpi/sysid/Util.hpp"
 #include "wpi/sysid/view/Analyzer.hpp"
 #include "wpi/sysid/view/DataSelector.hpp"
+#include "wpi/sysid/view/GridLayout.hpp"
 #include "wpi/sysid/view/LogLoader.hpp"
 #include "wpi/sysid/view/Theme.hpp"
 #include "wpi/sysid/view/UILayout.hpp"
@@ -38,6 +40,7 @@
 namespace gui = wpi::gui;
 
 static std::unique_ptr<wpi::glass::WindowManager> gWindowManager;
+static sysid::GridLayout gGridLayout;
 
 wpi::glass::Window* gLogLoaderWindow;
 wpi::glass::Window* gDataSelectorWindow;
@@ -166,9 +169,35 @@ void Application(std::string_view saveDir) {
   gProgramLogWindow = gWindowManager->AddWindow(
       "Program Log", std::make_unique<wpi::glass::LogView>(&gLog));
 
-  // Set default positions and sizes for windows, and lock them so they
-  // cannot be dragged on top of each other.
-  auto ResetLayout = [] {
+  // Register all panels with the grid layout engine.
+  gGridLayout.Register("Log Loader",
+      sysid::GridCell{sysid::kLogLoaderDefaultCol,
+                      sysid::kLogLoaderDefaultRow,
+                      sysid::kLogLoaderDefaultColSpan,
+                      sysid::kLogLoaderDefaultRowSpan});
+  gGridLayout.Register("Data Selector",
+      sysid::GridCell{sysid::kDataSelectorDefaultCol,
+                      sysid::kDataSelectorDefaultRow,
+                      sysid::kDataSelectorDefaultColSpan,
+                      sysid::kDataSelectorDefaultRowSpan});
+  gGridLayout.Register("Analyzer",
+      sysid::GridCell{sysid::kAnalyzerDefaultCol,
+                      sysid::kAnalyzerDefaultRow,
+                      sysid::kAnalyzerDefaultColSpan,
+                      sysid::kAnalyzerDefaultRowSpan});
+  gGridLayout.Register("Program Log",
+      sysid::GridCell{sysid::kProgramLogDefaultCol,
+                      sysid::kProgramLogDefaultRow,
+                      sysid::kProgramLogDefaultColSpan,
+                      sysid::kProgramLogDefaultRowSpan});
+  gGridLayout.Register("Diagnostic Plots",
+      sysid::GridCell{sysid::kDiagnosticPlotsDefaultCol,
+                      sysid::kDiagnosticPlotsDefaultRow,
+                      sysid::kDiagnosticPlotsDefaultColSpan,
+                      sysid::kDiagnosticPlotsDefaultRowSpan});
+
+  // Set default positions and sizes for windows upon launch.
+  auto ResetLayout = [&storage] {
     gLogLoaderWindow->SetDefaultPos(sysid::kLogLoaderWindowPos.x,
                                     sysid::kLogLoaderWindowPos.y);
     gLogLoaderWindow->SetDefaultSize(sysid::kLogLoaderWindowSize.x,
@@ -185,6 +214,9 @@ void Application(std::string_view saveDir) {
                                      sysid::kProgramLogWindowPos.y);
     gProgramLogWindow->SetDefaultSize(sysid::kProgramLogWindowSize.x,
                                       sysid::kProgramLogWindowSize.y);
+    // Reset the grid layout and persist the defaults
+    gGridLayout.Reset();
+    gGridLayout.Save(storage);
   };
   ResetLayout();
   gProgramLogWindow->DisableRenamePopup();
@@ -199,77 +231,21 @@ void Application(std::string_view saveDir) {
   gui::AddLateExecute([] {
     gThemeManager.ApplyStyle();
 
-    // ---- Runtime layout reset (triggered by Widgets → Reset Layout) ----
-    // Uses ImGuiCond_Always so it overrides the saved .ini position.
+    // ---- Grid layout engine: snap, swap/reject, overlays ------------------
+    // GridLayout::Apply() replaces the old hard-coded ClampWindow system.
+    // It enforces per-cell positions for non-dragging windows, detects
+    // drag-end to snap/swap/reject, draws the preview overlay while dragging,
+    // and handles resize-end to update colSpan/rowSpan.
+    gGridLayout.Apply();
+
+    // ---- Runtime layout reset (triggered by Widgets → Reset Layout) --------
+    // GridLayout::Reset() snaps all cells back to their registered defaults.
+    // We persist immediately so the change survives a restart.
     if (gDoResetLayout) {
-      ImGui::SetWindowPos("Log Loader",
-          ImVec2(sysid::kLogLoaderWindowPos.x, sysid::kLogLoaderWindowPos.y),
-          ImGuiCond_Always);
-      ImGui::SetWindowSize("Log Loader",
-          ImVec2(sysid::kLogLoaderWindowSize.x, sysid::kLogLoaderWindowSize.y),
-          ImGuiCond_Always);
-      ImGui::SetWindowPos("Data Selector",
-          ImVec2(sysid::kDataSelectorWindowPos.x, sysid::kDataSelectorWindowPos.y),
-          ImGuiCond_Always);
-      ImGui::SetWindowSize("Data Selector",
-          ImVec2(sysid::kDataSelectorWindowSize.x, sysid::kDataSelectorWindowSize.y),
-          ImGuiCond_Always);
-      ImGui::SetWindowPos("Analyzer",
-          ImVec2(sysid::kAnalyzerWindowPos.x, sysid::kAnalyzerWindowPos.y),
-          ImGuiCond_Always);
-      ImGui::SetWindowSize("Analyzer",
-          ImVec2(sysid::kAnalyzerWindowSize.x, sysid::kAnalyzerWindowSize.y),
-          ImGuiCond_Always);
-      ImGui::SetWindowPos("Program Log",
-          ImVec2(sysid::kProgramLogWindowPos.x, sysid::kProgramLogWindowPos.y),
-          ImGuiCond_Always);
-      ImGui::SetWindowSize("Program Log",
-          ImVec2(sysid::kProgramLogWindowSize.x, sysid::kProgramLogWindowSize.y),
-          ImGuiCond_Always);
-      ImGui::SetWindowPos("Diagnostic Plots",
-          ImVec2(sysid::kDiagnosticPlotWindowPos.x, sysid::kDiagnosticPlotWindowPos.y),
-          ImGuiCond_Always);
-      ImGui::SetWindowSize("Diagnostic Plots",
-          ImVec2(sysid::kDiagnosticPlotWindowSize.x, sysid::kDiagnosticPlotWindowSize.y),
-          ImGuiCond_Always);
+      gGridLayout.Reset();
+      gGridLayout.Save(wpi::glass::GetStorageRoot().GetChild("SysId"));
       gDoResetLayout = false;
     }
-
-    // ---- Per-frame column clamping ----
-    // Clamp each panel's X position so it cannot cross into another column.
-    // This lets users rearrange within their column but prevents overlap
-    // between the left (log/data), center (analyzer/log), and right (plots)
-    // columns. Y is clamped to stay on screen.
-    auto ClampWindow = [](const char* name, float minX, float maxX,
-                          float minY, float maxY) {
-      ImGuiWindow* win = ImGui::FindWindowByName(name);
-      if (!win || win->Hidden) return;
-      ImVec2 pos = win->Pos;
-      ImVec2 sz  = win->Size;
-      // Guard against a window wider/taller than its allowed range.
-      // If the window doesn't fit, pin it to the min edge instead of crashing.
-      float clampedX = (maxX - sz.x >= minX)
-                           ? std::clamp(pos.x, minX, maxX - sz.x)
-                           : minX;
-      float clampedY = (maxY - sz.y >= minY)
-                           ? std::clamp(pos.y, minY, maxY - sz.y)
-                           : minY;
-      if (clampedX != pos.x || clampedY != pos.y) {
-        ImGui::SetWindowPos(name, ImVec2(clampedX, clampedY), ImGuiCond_Always);
-      }
-    };
-    const float leftMax  = sysid::kLeftColPos.x + sysid::kLeftColSize.x;
-    const float centMin  = sysid::kCenterColPos.x;
-    const float centMax  = sysid::kCenterColPos.x + sysid::kCenterColSize.x;
-    const float rightMin = sysid::kRightColPos.x;
-    const float appH     = sysid::kAppWindowSize.y;
-    const float menuH    = static_cast<float>(sysid::kMenubarHeight);
-    ClampWindow("Log Loader",       sysid::kWindowGap, leftMax,  menuH, appH);
-    ClampWindow("Data Selector",    sysid::kWindowGap, leftMax,  menuH, appH);
-    ClampWindow("Analyzer",         centMin, centMax,            menuH, appH);
-    ClampWindow("Program Log",      centMin, centMax,            menuH, appH);
-    ClampWindow("Diagnostic Plots", rightMin,
-                sysid::kAppWindowSize.x - sysid::kWindowGap,     menuH, appH);
 
     ImGui::BeginMainMenuBar();
     gMainMenu.WorkspaceMenu();
@@ -299,6 +275,18 @@ void Application(std::string_view saveDir) {
       ImGui::Separator();
       if (ImGui::MenuItem("Reset Layout")) {
         gDoResetLayout = true;
+      }
+      ImGui::Separator();
+      if (ImGui::BeginMenu("Grid Settings")) {
+        ImGui::Checkbox("Show grid overlay", &gGridLayout.showGridOverlay);
+        sysid::CreateTooltip(
+            "Draw faint grid lines over the workspace background so you can "
+            "see the snap grid while arranging panels.");
+        ImGui::Checkbox("Snap to grid on release", &gGridLayout.snapWhileDragging);
+        sysid::CreateTooltip(
+            "When enabled, panels snap to the nearest grid cell when you "
+            "release the mouse button after dragging. Disable for free movement.");
+        ImGui::EndMenu();
       }
       ImGui::EndMenu();
     }
@@ -331,9 +319,9 @@ void Application(std::string_view saveDir) {
       about = false;
     }
     if (ImGui::BeginPopupModal("About")) {
-      ImGui::Text("SysId: System Identification for Robot Mechanisms");
+      ImGui::Text("D-Bug SysId v2.0.0 - System Identification for Robot Mechanisms");
       ImGui::Separator();
-      ImGui::Text("v%s", GetWPILibVersion());
+      ImGui::Text("WPILib v%s", GetWPILibVersion());
       gui::EmitRendererInfo();
       ImGui::Separator();
       ImGui::Text("Save location: %s", wpi::glass::GetStorageDir().c_str());
@@ -345,12 +333,12 @@ void Application(std::string_view saveDir) {
 
     // Welcome / landing page modal
     if (gShowWelcome) {
-      ImGui::OpenPopup("Welcome to D-Bug SysId");
+      ImGui::OpenPopup("Welcome to D-Bug SysId v2.0.0");
     }
     ImGui::SetNextWindowSize(ImVec2(520, 0), ImGuiCond_Always);
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
                             ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    if (ImGui::BeginPopupModal("Welcome to D-Bug SysId",
+    if (ImGui::BeginPopupModal("Welcome to D-Bug SysId v2.0.0",
                                nullptr,
                                ImGuiWindowFlags_AlwaysAutoResize |
                                    ImGuiWindowFlags_NoMove)) {
@@ -414,7 +402,7 @@ void Application(std::string_view saveDir) {
     }
   });
 
-  gui::Initialize("System Identification", sysid::kAppWindowSize.x,
+  gui::Initialize("D-Bug SysId v2.0.0", sysid::kAppWindowSize.x,
                   sysid::kAppWindowSize.y, gui::RendererPreference::PREFER_2D);
   gui::Main();
 
