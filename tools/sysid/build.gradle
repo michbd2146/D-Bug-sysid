@@ -103,6 +103,8 @@ model {
                 lib project: ':wpimath', library: 'wpimath', linkage: 'static'
                 lib project: ':wpigui', library: 'wpigui', linkage: 'static'
                 lib project: ':datalog', library: 'datalog', linkage: 'static'
+                lib project: ':ntcore', library: 'ntcore', linkage: 'static'
+                lib project: ':wpinet', library: 'wpinet', linkage: 'static'
                 lib project: ':thirdparty:imgui_suite', library: 'imguiSuite', linkage: 'static'
                 lib project: ':wpiutil', library: 'wpiutil', linkage: 'static'
                 project.addLibSdlGpuDependency(it)
@@ -136,6 +138,8 @@ model {
                 lib project: ':glass', library: 'glass', linkage: 'static'
                 lib project: ':wpimath', library: 'wpimath', linkage: 'static'
                 lib project: ':datalog', library: 'datalog', linkage: 'static'
+                lib project: ':ntcore', library: 'ntcore', linkage: 'static'
+                lib project: ':wpinet', library: 'wpinet', linkage: 'static'
                 lib project: ':wpigui', library: 'wpigui', linkage: 'static'
                 lib project: ':thirdparty:imgui_suite', library: 'imguiSuite', linkage: 'static'
                 lib project: ':wpiutil', library: 'wpiutil', linkage: 'static'

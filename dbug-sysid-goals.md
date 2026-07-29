@@ -20,20 +20,20 @@ This document outlines the planned feature roadmap and engineering goals for **D
 
 ---
 
-## 2. Integrated On-Robot Routine Execution Tab
+## 2. Integrated On-Robot Routine Execution Tab [COMPLETED - v2.1.0]
 
 > **Concept**: Eliminate the need to manually deploy and trigger separate characterization code on the robot. Add a dedicated **Robot Control & Execution** tab inside SysId to trigger tests live over NetworkTables (NT4).
 
 ### Key Requirements
-- [ ] **New Top-Level Tab**: Add a "Robot Test Runner" tab alongside the Analyzer/LogLoader.
-- [ ] **Live NT4 Connection Status**: Connect to the RoboRIO IP (`10.TE.AM.2` or `169.254.x.x`) to verify status and safety interlocks.
-- [ ] **Routine Triggering**:
-  - [ ] Quasistatic Forward / Backward controls with live voltage limits.
-  - [ ] Dynamic (Step Voltage) Forward / Backward controls with configurable step voltages.
-- [ ] **Live Telemetry & Safety Cutoffs**:
-  - [ ] Real-time display of mechanism position, velocity, and applied voltage during sweep execution.
-  - [ ] Emergency Stop (E-Stop) button and automatic safety thresholds (e.g. max position limits, over-current trip).
-- [ ] **Direct Data Handoff**: Automatically stream recorded test data directly into the *Data Selector* without requiring manual file downloading.
+- [x] **New Top-Level Tab**: Add a "Robot Test Runner" panel alongside the Analyzer/LogLoader.
+- [x] **Live NT4 Connection Status**: Connect to the RoboRIO IP (`10.TE.AM.2` or `169.254.x.x`) to verify status and safety interlocks.
+- [x] **Routine Triggering**:
+  - [x] Quasistatic Forward / Backward controls with live voltage limits.
+  - [x] Dynamic (Step Voltage) Forward / Backward controls with configurable step voltages.
+- [x] **Live Telemetry & Safety Cutoffs**:
+  - [x] Real-time display of mechanism position, velocity, and applied voltage during sweep execution.
+  - [x] Emergency Stop (E-Stop) button and automatic safety thresholds (e.g. max position limits, over-current trip).
+- [x] **Direct Data Handoff**: Automatically stream recorded test data directly into the *Data Selector* without requiring manual file downloading.
 
 ---
 
@@ -50,10 +50,16 @@ This document outlines the planned feature roadmap and engineering goals for **D
   - [ ] Export FOC-specific Feedforward ($kS, kV, kA$) and Feedback ($kP, kI, kD$) gains tuned for TorqueCurrentFOC and VoltageFOC control requests.
 - [ ] **REV SPARK Flex / SPARK Max Smart Motion**:
   - [ ] Gain translation for REV SPARK Flex/Max onboard closed-loop control modes (Duty Cycle vs. Voltage vs. Current modes).
+- [ ] **Transfer Function ($G(s)$ & $G(z)$) & Model Analysis**:
+  - [ ] **Continuous-Time Transfer Function**: Automatically derive $G(s) = \frac{K}{\tau s + 1}$ (velocity) or $G(s) = \frac{K}{s(\tau s + 1)}$ (position) from identified $K_v, K_a$ parameters.
+  - [ ] **Key System Metrics Display**: Render formatted mathematical transfer function expressions $G(s)$, Mechanical Time Constant ($\tau = K_a / K_v$), System Gain ($K = 1/K_v$), and Bandwidth ($\omega_c = 1/\tau$) in the Analyzer GUI.
+  - [ ] **Discrete-Time $G(z)$ & Sampling Delay**: Convert $G(s) \to G(z)$ via Zero-Order Hold (ZOH) at configurable sample rates (e.g. 20ms RoboRIO loop vs 1ms motor controller loop).
+  - [ ] **Bode Theoretical Overlay**: Plot theoretical $G(s)$ magnitude & phase response directly over empirical chirp data in `BodeAnalysis` to highlight structural resonances or belt flex.
 - [ ] **Code Snippet Generator Expansion**:
   - [ ] Update **Copy as Code** generator to support:
     - [ ] `VoltageOut` vs `TorqueCurrentFOC` snippets for CTRE Phoenix 6 (Java & C++).
     - [ ] `MotionMagicVoltage` vs `MotionMagicTorqueCurrentFOC` configuration blocks.
+    - [ ] WPILib `LinearSystemId` / `LinearSystem` plant matrix ($A, B, C, D$) snippet export for Java & C++ robot code and simulation.
 
 ---
 
@@ -68,3 +74,5 @@ This document outlines the planned feature roadmap and engineering goals for **D
 - **v1.0.4 (2026-07-27)**: Fixed interactive border resizing using `GImGui->ActiveIdWindow` and mouse dragging state.
 - **v1.0.5 (2026-07-27)**: Added omnidirectional resizing support across all 8 borders and corners (Top, Bottom, Left, Right, Top-Left, Top-Right, Bottom-Left, Bottom-Right) with grid cell edge snapping and collision rejection.
 - **v2.0.0 (2026-07-27)**: **Milestone Release!** Goal 1 is fully completed, verified, and accepted by the user. Version bumped to `v2.0.0` marking the completion of Goal 1 and readiness for Goal 2.
+- **v2.1.0 (2026-07-29)**: **Goal 2 Completed!** Implemented `RobotRunner` & `RobotConnection` panel for live NetworkTables (NT4) on-robot routine execution, automated position/current safety cutoffs, Emergency Stop, and grid layout registration. All 40,664 unit test assertions verified successfully.
+- **v2.2.0 (2026-07-29)**: **Safety Tab Workspace & Layout Lock!** Converted Robot Test Runner into a full-workspace locked Safety Tab Mode (`gAppMode == 1`), moved Mode Switcher tabs to the right side of the control bar, and enforced `ImGuiCond_Always` window positioning so it opens cleanly at `(5, 30)` and resets with `Widgets -> Reset Layout`.

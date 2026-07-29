@@ -79,6 +79,11 @@ class Window {
     m_pos = ImVec2{x, y};
   }
 
+  void SetPos(float x, float y, ImGuiCond cond = ImGuiCond_Always) {
+    m_posCond = cond;
+    m_pos = ImVec2{x, y};
+  }
+
   /**
    * Sets default size of window.
    *
@@ -87,6 +92,11 @@ class Window {
    */
   void SetDefaultSize(float width, float height) {
     m_sizeCond = ImGuiCond_FirstUseEver;
+    m_size = ImVec2{width, height};
+  }
+
+  void SetSize(float width, float height, ImGuiCond cond = ImGuiCond_Always) {
+    m_sizeCond = cond;
     m_size = ImVec2{width, height};
   }
 

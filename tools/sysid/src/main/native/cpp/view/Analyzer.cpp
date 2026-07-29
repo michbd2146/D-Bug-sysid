@@ -28,6 +28,41 @@
 #include "wpi/sysid/view/UILayout.hpp"
 #include "wpi/util/json.hpp"
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
+static bool CopyToWindowsClipboard(const std::string& text) {
+  if (text.empty()) {
+    return false;
+  }
+  if (!OpenClipboard(NULL)) {
+    return false;
+  }
+  EmptyClipboard();
+  HGLOBAL hGlob = GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
+  if (!hGlob) {
+    CloseClipboard();
+    return false;
+  }
+  char* pBuf = static_cast<char*>(GlobalLock(hGlob));
+  if (pBuf) {
+    memcpy(pBuf, text.c_str(), text.size() + 1);
+    GlobalUnlock(hGlob);
+    SetClipboardData(CF_TEXT, hGlob);
+  } else {
+    GlobalFree(hGlob);
+  }
+  CloseClipboard();
+  return true;
+}
+#endif
+
 using namespace sysid;
 
 Analyzer::Analyzer(wpi::glass::Storage& storage, wpi::util::Logger& logger)
@@ -191,100 +226,85 @@ void Analyzer::ConfigParamsOnFileSelect() {
       0.25 * (12.0 - m_feedforwardGains.Ks.gain) / m_feedforwardGains.Kv.gain;
 }
 
-// Generates ready-to-use Java & C++ boilerplate code containing calculated feedforward & PID gains.
+// Generates ready-to-use Java boilerplate code containing calculated feedforward & PID gains.
 // Needed so FRC programmers can instantly copy gains into robot code without manual copy-paste errors.
 std::string Analyzer::GenerateCodeSnippet() const {
-  const auto& ff = m_feedforwardGains;
-  const auto type = m_manager ? m_manager->GetAnalysisType() : analysis::kSimple;
-  const auto unit =
-      m_manager ? std::string{m_manager->GetUnit()} : std::string{"Meters"};
-  const std::string abbr{GetAbbreviation(unit)};
+  try {
+    const auto& ff = m_feedforwardGains;
 
-  std::string java;
-  std::string cpp;
+    // Check if any calculated or theoretical gains are present and valid
+    bool validGains = (std::isfinite(ff.Ks.gain) && ff.Ks.gain != 0.0) ||
+                      (std::isfinite(ff.Kv.gain) && ff.Kv.gain != 0.0) ||
+                      (std::isfinite(ff.Ka.gain) && ff.Ka.gain != 0.0) ||
+                      (std::isfinite(m_Kp) && m_Kp != 0.0) ||
+                      (std::isfinite(m_Kd) && m_Kd != 0.0);
 
-  // ------ Java snippet ------
-  java += "// === SysId Gains (Java) ===\n";
-  java += std::format("// Unit: {}, Type: {}\n", unit, type.name);
-  java += std::format(
-      "SimpleMotorFeedforward feedforward =\n"
-      "    new SimpleMotorFeedforward(\n"
-      "        /* ks  */ {:.5G},\n"
-      "        /* kv  */ {:.5G},\n"
-      "        /* ka  */ {:.5G});\n",
-      ff.Ks.gain, ff.Kv.gain, ff.Ka.gain);
+    if (!validGains) {
+      return "";  // Nothing to copy!
+    }
 
-  if (type == analysis::kElevator) {
-    java += std::format("// Elevator Kg (gravity feedforward): {:.5G}\n",
-                        ff.Kg.gain);
-  } else if (type == analysis::kArm) {
+    const auto type = m_manager ? m_manager->GetAnalysisType() : analysis::kSimple;
+    const char* typeName = (type.name != nullptr) ? type.name : "Simple";
+    const std::string unit =
+        m_manager ? std::string{m_manager->GetUnit()} : std::string{"Meters"};
+
+    double ks = std::isfinite(ff.Ks.gain) ? ff.Ks.gain : 0.0;
+    double kv = std::isfinite(ff.Kv.gain) ? ff.Kv.gain : 0.0;
+    double ka = std::isfinite(ff.Ka.gain) ? ff.Ka.gain : 0.0;
+    double kg = std::isfinite(ff.Kg.gain) ? ff.Kg.gain : 0.0;
+    double offset = std::isfinite(ff.offset.gain) ? ff.offset.gain : 0.0;
+    double kp = std::isfinite(m_Kp) ? m_Kp : 0.0;
+    double kd = std::isfinite(m_Kd) ? m_Kd : 0.0;
+
+    bool isElevator = (typeName != nullptr && std::string_view{typeName} == "Elevator");
+    bool isArm = (typeName != nullptr && std::string_view{typeName} == "Arm");
+
+    std::string java;
+    java += "// === SysId Gains (Java) ===\n";
+    java += std::format("// Unit: {}, Type: {}\n", unit, typeName);
+
+    if (isElevator) {
+      java += std::format(
+          "ElevatorFeedforward feedforward =\n"
+          "    new ElevatorFeedforward(\n"
+          "        /* ks */ {:.5G},\n"
+          "        /* kg */ {:.5G},\n"
+          "        /* kv */ {:.5G},\n"
+          "        /* ka */ {:.5G});\n",
+          ks, kg, kv, ka);
+    } else if (isArm) {
+      java += std::format(
+          "ArmFeedforward feedforward =\n"
+          "    new ArmFeedforward(\n"
+          "        /* ks */ {:.5G},\n"
+          "        /* kg */ {:.5G},\n"
+          "        /* kv */ {:.5G},\n"
+          "        /* ka */ {:.5G});\n"
+          "// Arm horizontal angle offset: {:.5G}\n",
+          ks, kg, kv, ka, offset);
+    } else {
+      java += std::format(
+          "SimpleMotorFeedforward feedforward =\n"
+          "    new SimpleMotorFeedforward(\n"
+          "        /* ks */ {:.5G},\n"
+          "        /* kv */ {:.5G},\n"
+          "        /* ka */ {:.5G});\n",
+          ks, kv, ka);
+    }
+
     java += std::format(
-        "// Arm Kg (gravity feedforward): {:.5G}\n"
-        "// Arm angle offset to horizontal: {:.5G}\n",
-        ff.Kg.gain, ff.offset.gain);
+        "\n"
+        "PIDController pidController =\n"
+        "    new PIDController(\n"
+        "        /* kp */ {:.5G},\n"
+        "        /* ki */ 0.0,\n"
+        "        /* kd */ {:.5G});\n",
+        kp, kd);
+
+    return java;
+  } catch (...) {
+    return "";
   }
-
-  java += std::format(
-      "\n"
-      "PIDController pidController =\n"
-      "    new PIDController(\n"
-      "        /* kp */ {:.5G},\n"
-      "        /* ki */ 0,\n"
-      "        /* kd */ {:.5G});\n",
-      m_Kp, m_Kd);
-
-  // ------ C++ snippet ------
-  cpp += "// === SysId Gains (C++) ===\n";
-  cpp += std::format("// Unit: {}, Type: {}\n", unit, type.name);
-  std::string cppUnit = unit == "Meters"    ? "meter"
-                        : unit == "Feet"    ? "foot"
-                        : unit == "Inches"  ? "inch"
-                        : unit == "Radians" ? "radian"
-                        : unit == "Degrees" ? "degree"
-                                            : "turn";
-  cpp += std::format(
-      "frc::SimpleMotorFeedforward<units::{}> feedforward{{\n"
-      "    /* ks */ {:.5G}_V,\n"
-      "    /* kv */ {:.5G}_V / 1_s,\n"
-      "    /* ka */ {:.5G}_V / 1_s_sq}};\n",
-      cppUnit, ff.Ks.gain, ff.Kv.gain, ff.Ka.gain);
-
-  if (type == analysis::kElevator) {
-    cpp += std::format("// Elevator Kg (gravity feedforward): {:.5G}\n",
-                       ff.Kg.gain);
-  } else if (type == analysis::kArm) {
-    cpp += std::format(
-        "// Arm Kg (gravity feedforward): {:.5G}\n"
-        "// Arm angle offset to horizontal: {:.5G} rad\n",
-        ff.Kg.gain, ff.offset.gain);
-  }
-
-  // ------ CTRE Phoenix 6 snippet ------
-  std::string phoenix6;
-  phoenix6 += "// === CTRE Phoenix 6 (Java / C++) ===\n";
-  phoenix6 += std::format(
-      "Slot0Configs slot0 = new Slot0Configs();\n"
-      "slot0.kS = {:.5G};\n"
-      "slot0.kV = {:.5G};\n"
-      "slot0.kA = {:.5G};\n"
-      "slot0.kP = {:.5G};\n"
-      "slot0.kD = {:.5G};\n",
-      ff.Ks.gain, ff.Kv.gain, ff.Ka.gain, m_Kp, m_Kd);
-  if (type == analysis::kElevator || type == analysis::kArm) {
-    phoenix6 += std::format("slot0.kG = {:.5G};\n", ff.Kg.gain);
-  }
-
-  // ------ REV SPARK closed-loop snippet ------
-  std::string revSpark;
-  revSpark += "// === REV SPARK Max / Flex (Java) ===\n";
-  revSpark += std::format(
-      "SparkClosedLoopController pidController = spark.getClosedLoopController();\n"
-      "// Note: REV onboard PID expects output scale presets (e.g. REV Brushless preset)\n"
-      "sparkConfig.closedLoop\n"
-      "    .pid({:.5G}, 0.0, {:.5G});\n",
-      m_Kp, m_Kd);
-
-  return java + "\n" + cpp + "\n" + phoenix6 + "\n" + revSpark;
 }
 
 void Analyzer::Display() {
@@ -615,15 +635,38 @@ void Analyzer::CollectFeedforwardGains(float beginX, float beginY) {
   ImGui::Spacing();
   if (ImGui::Button("Copy as Code")) {
     std::string snippet = GenerateCodeSnippet();
-    ImGui::SetClipboardText(snippet.c_str());
-    m_lastCopiedAt = ImGui::GetTime();
+    if (!snippet.empty()) {
+      bool copied = false;
+      try {
+        ImGui::SetClipboardText(snippet.c_str());
+        copied = true;
+      } catch (...) {}
+#ifdef _WIN32
+      if (CopyToWindowsClipboard(snippet)) {
+        copied = true;
+      }
+#endif
+      if (copied) {
+        m_lastCopiedAt = ImGui::GetTime();
+        m_copyErrorAt = -10.0;
+      } else {
+        m_copyErrorAt = ImGui::GetTime();
+        m_lastCopiedAt = -10.0;
+      }
+    } else {
+      m_copyErrorAt = ImGui::GetTime();
+      m_lastCopiedAt = -10.0;
+    }
   }
   sysid::CreateTooltip(
-      "Copies Java and C++ code snippets with the current gains to the "
+      "Copies Java code snippets with the current gains to the "
       "clipboard so you can paste them directly into your robot project.");
-  if (ImGui::GetTime() - m_lastCopiedAt < 3.0) {
+  if (m_lastCopiedAt > 0.0 && ImGui::GetTime() - m_lastCopiedAt < 3.0) {
     ImGui::SameLine();
-    ImGui::TextDisabled("Copied!");
+    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Copied!");
+  } else if (m_copyErrorAt > 0.0 && ImGui::GetTime() - m_copyErrorAt < 3.0) {
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Nothing to copy!");
   }
 }
 
@@ -725,26 +768,49 @@ void Analyzer::DisplayFeedforwardGains(float beginX, float beginY) {
   if (bodeResult.isValid) {
     ImGui::Spacing();
     ImGui::SeparatorText("System Dynamics & Stability");
-    ImGui::Text("  • Bandwidth (w_c):    %.2f Hz (%.2f rad/s)",
+    ImGui::Text("  \u2022 Bandwidth (w_c):    %.2f Hz (%.2f rad/s)",
                 bodeResult.bandwidthHz, bodeResult.bandwidthRadPerSec);
-    ImGui::Text("  • Time Constant (tau): %.2f ms", bodeResult.timeConstantSec * 1000.0);
-    ImGui::Text("  • Continuous Pole (s): %.2f rad/s", bodeResult.poleLocation);
-    ImGui::Text("  • 95%% Settling Time:  %.2f ms", bodeResult.settlingTimeSec * 1000.0);
+    ImGui::Text("  \u2022 Time Constant (tau): %.2f ms", bodeResult.timeConstantSec * 1000.0);
+    ImGui::Text("  \u2022 Continuous Pole (s): %.2f rad/s", bodeResult.poleLocation);
+    ImGui::Text("  \u2022 95%% Settling Time:  %.2f ms", bodeResult.settlingTimeSec * 1000.0);
   }
 
-  // "Copy as Code" button – generates Java + C++ snippet from current gains.
+  // "Copy as Code" button – generates Java snippet from current gains.
   ImGui::Spacing();
   if (ImGui::Button("Copy as Code")) {
     std::string snippet = GenerateCodeSnippet();
-    ImGui::SetClipboardText(snippet.c_str());
-    m_lastCopiedAt = ImGui::GetTime();
+    if (!snippet.empty()) {
+      bool copied = false;
+      try {
+        ImGui::SetClipboardText(snippet.c_str());
+        copied = true;
+      } catch (...) {}
+#ifdef _WIN32
+      if (CopyToWindowsClipboard(snippet)) {
+        copied = true;
+      }
+#endif
+      if (copied) {
+        m_lastCopiedAt = ImGui::GetTime();
+        m_copyErrorAt = -10.0;
+      } else {
+        m_copyErrorAt = ImGui::GetTime();
+        m_lastCopiedAt = -10.0;
+      }
+    } else {
+      m_copyErrorAt = ImGui::GetTime();
+      m_lastCopiedAt = -10.0;
+    }
   }
   sysid::CreateTooltip(
-      "Copies Java and C++ code snippets with the current gains to the "
+      "Copies Java code snippets with the current gains to the "
       "clipboard so you can paste them directly into your robot project.");
-  if (ImGui::GetTime() - m_lastCopiedAt < 3.0) {
+  if (m_lastCopiedAt > 0.0 && ImGui::GetTime() - m_lastCopiedAt < 3.0) {
     ImGui::SameLine();
-    ImGui::TextDisabled("Copied!");
+    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Copied!");
+  } else if (m_copyErrorAt > 0.0 && ImGui::GetTime() - m_copyErrorAt < 3.0) {
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Nothing to copy!");
   }
 }
 

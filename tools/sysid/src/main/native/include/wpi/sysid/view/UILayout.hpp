@@ -139,4 +139,10 @@ inline constexpr int kDiagnosticPlotsDefaultRow     = 0;
 inline constexpr int kDiagnosticPlotsDefaultColSpan = 30;
 inline constexpr int kDiagnosticPlotsDefaultRowSpan = 35;
 
+/// Default GridCell for the "Robot Test Runner" window (Full Workspace Safety Focus)
+inline constexpr int kRobotRunnerDefaultCol     = 0;
+inline constexpr int kRobotRunnerDefaultRow     = 0;
+inline constexpr int kRobotRunnerDefaultColSpan = 64;
+inline constexpr int kRobotRunnerDefaultRowSpan = 35;
+
 }  // namespace sysid

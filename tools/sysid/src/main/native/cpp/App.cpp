@@ -32,6 +32,7 @@
 #include "wpi/sysid/view/DataSelector.hpp"
 #include "wpi/sysid/view/GridLayout.hpp"
 #include "wpi/sysid/view/LogLoader.hpp"
+#include "wpi/sysid/view/RobotRunner.hpp"
 #include "wpi/sysid/view/Theme.hpp"
 #include "wpi/sysid/view/UILayout.hpp"
 #include "wpi/util/Logger.hpp"
@@ -46,7 +47,11 @@ wpi::glass::Window* gLogLoaderWindow;
 wpi::glass::Window* gDataSelectorWindow;
 wpi::glass::Window* gAnalyzerWindow;
 wpi::glass::Window* gProgramLogWindow;
+wpi::glass::Window* gRobotRunnerWindow;
 static wpi::glass::MainMenuBar gMainMenu;
+
+// App Mode: 0 = Analyzer Workspace, 1 = Live Robot Runner Safety Mode
+static int gAppMode = 0;
 
 wpi::glass::LogData gLog;
 wpi::util::Logger gLogger;
@@ -143,6 +148,7 @@ void Application(std::string_view saveDir) {
   auto logLoader = std::make_unique<sysid::LogLoader>(storage, gLogger);
   auto dataSelector = std::make_unique<sysid::DataSelector>(storage, gLogger);
   auto analyzer = std::make_unique<sysid::Analyzer>(storage, gLogger);
+  auto robotRunner = std::make_unique<sysid::RobotRunner>(storage, gLogger);
 
   logLoader->unload.connect([ds = dataSelector.get()] { ds->Reset(); });
   // Connect the logLoader's load signal to dataSelector's SetReader method so that
@@ -165,6 +171,10 @@ void Application(std::string_view saveDir) {
       gWindowManager->AddWindow("Data Selector", std::move(dataSelector));
 
   gAnalyzerWindow = gWindowManager->AddWindow("Analyzer", std::move(analyzer));
+
+  gRobotRunnerWindow =
+      gWindowManager->AddWindow("Robot Test Runner", std::move(robotRunner));
+  gRobotRunnerWindow->SetVisible(false);
 
   gProgramLogWindow = gWindowManager->AddWindow(
       "Program Log", std::make_unique<wpi::glass::LogView>(&gLog));
@@ -214,6 +224,8 @@ void Application(std::string_view saveDir) {
                                      sysid::kProgramLogWindowPos.y);
     gProgramLogWindow->SetDefaultSize(sysid::kProgramLogWindowSize.x,
                                       sysid::kProgramLogWindowSize.y);
+    gRobotRunnerWindow->SetDefaultPos(10.0f, 30.0f);
+    gRobotRunnerWindow->SetDefaultSize(1250.0f, 670.0f);
     // Reset the grid layout and persist the defaults
     gGridLayout.Reset();
     gGridLayout.Save(storage);
@@ -247,7 +259,16 @@ void Application(std::string_view saveDir) {
       gDoResetLayout = false;
     }
 
+    // ---- Enforce locked full-tab layout for Robot Test Runner -------------
+    if (gAppMode == 1 && gRobotRunnerWindow) {
+      const ImVec2 disp = ImGui::GetIO().DisplaySize;
+      gRobotRunnerWindow->SetPos(5.0f, sysid::GridLayout::kMenuBarH + 5.0f, ImGuiCond_Always);
+      gRobotRunnerWindow->SetSize(disp.x - 10.0f, disp.y - sysid::GridLayout::kMenuBarH - 10.0f, ImGuiCond_Always);
+      gRobotRunnerWindow->SetFlags(ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+    }
+
     ImGui::BeginMainMenuBar();
+
     gMainMenu.WorkspaceMenu();
     gui::EmitViewMenu();
 
@@ -312,6 +333,33 @@ void Application(std::string_view saveDir) {
       ImGui::EndMenu();
     }
 
+    // Mode Selector Tabs (Positioned on the RIGHT side of the control bar)
+    float rightOffset = ImGui::GetWindowWidth() - 520.0f;
+    if (rightOffset > 400.0f) {
+      ImGui::SameLine(rightOffset);
+    } else {
+      ImGui::SameLine();
+    }
+
+    if (ImGui::MenuItem("  Analyzer Workspace  ", nullptr, gAppMode == 0)) {
+      gAppMode = 0;
+      gLogLoaderWindow->SetVisible(true);
+      gDataSelectorWindow->SetVisible(true);
+      gAnalyzerWindow->SetVisible(true);
+      gProgramLogWindow->SetVisible(true);
+      gRobotRunnerWindow->SetVisible(false);
+    }
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+    if (ImGui::MenuItem("  Robot Test Runner (SAFETY MODE)  ", nullptr, gAppMode == 1)) {
+      gAppMode = 1;
+      gLogLoaderWindow->SetVisible(false);
+      gDataSelectorWindow->SetVisible(false);
+      gAnalyzerWindow->SetVisible(false);
+      gProgramLogWindow->SetVisible(false);
+      gRobotRunnerWindow->SetVisible(true);
+    }
+    ImGui::PopStyleColor();
+
     ImGui::EndMainMenuBar();
 
     if (about) {
@@ -319,7 +367,7 @@ void Application(std::string_view saveDir) {
       about = false;
     }
     if (ImGui::BeginPopupModal("About")) {
-      ImGui::Text("D-Bug SysId v2.0.0 - System Identification for Robot Mechanisms");
+      ImGui::Text("D-Bug SysId v2.2.0 - System Identification for Robot Mechanisms");
       ImGui::Separator();
       ImGui::Text("WPILib v%s", GetWPILibVersion());
       gui::EmitRendererInfo();
@@ -333,12 +381,12 @@ void Application(std::string_view saveDir) {
 
     // Welcome / landing page modal
     if (gShowWelcome) {
-      ImGui::OpenPopup("Welcome to D-Bug SysId v2.0.0");
+      ImGui::OpenPopup("Welcome to D-Bug SysId v2.2.0");
     }
     ImGui::SetNextWindowSize(ImVec2(520, 0), ImGuiCond_Always);
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
                             ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    if (ImGui::BeginPopupModal("Welcome to D-Bug SysId v2.0.0",
+    if (ImGui::BeginPopupModal("Welcome to D-Bug SysId v2.2.0",
                                nullptr,
                                ImGuiWindowFlags_AlwaysAutoResize |
                                    ImGuiWindowFlags_NoMove)) {

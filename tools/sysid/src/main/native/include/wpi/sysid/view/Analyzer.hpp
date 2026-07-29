@@ -253,7 +253,8 @@ class Analyzer : public wpi::glass::View {
   std::atomic<bool> m_abortDataPrep{false};
   std::thread m_dataThread;
 
-  // Clipboard copy timestamp for displaying "Copied!" flash feedback.
+  // Clipboard copy timestamp for displaying "Copied!" or "Nothing to copy!" flash feedback.
   double m_lastCopiedAt = -10.0;
+  double m_copyErrorAt = -10.0;
 };
 }  // namespace sysid

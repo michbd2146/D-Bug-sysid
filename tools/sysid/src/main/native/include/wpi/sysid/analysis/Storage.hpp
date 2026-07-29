@@ -38,8 +38,8 @@ struct MotorData {
 };
 
 struct TestData {
-  std::string distanceUnit;
-  AnalysisType mechanismType;
+  std::string distanceUnit{"Meters"};
+  AnalysisType mechanismType{analysis::kSimple};
   wpi::util::StringMap<MotorData> motorData;
 };
 
