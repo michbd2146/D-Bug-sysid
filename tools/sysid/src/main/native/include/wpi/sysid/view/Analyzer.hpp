@@ -61,6 +61,16 @@ class Analyzer : public wpi::glass::View {
                                                  "Venom"};
 
   /**
+   * The different control effort units that can be used.
+   */
+  static constexpr const char* kControlEffortUnits[] = {"Voltage (V)", "Torque Current (A)"};
+
+  /**
+   * The different target frameworks for code generation.
+   */
+  static constexpr const char* kTargetFrameworks[] = {"WPILib", "CTRE Phoenix 6", "REV"};
+
+  /**
    * The different control loops that can be used.
    */
   static constexpr const char* kLoopTypes[] = {"Position", "Velocity"};
@@ -160,6 +170,21 @@ class Analyzer : public wpi::glass::View {
   void DisplayFeedforwardGains(float beginX, float beginY);
 
   /**
+   * Displays the dropdown and button for generating and copying a code snippet.
+   */
+  void DisplayCodeSnippetOptions();
+
+  /**
+   * Displays the system dynamics and transfer functions card.
+   */
+  void DisplaySystemDynamicsCard(double Kv, double Ka);
+
+  /**
+   * Displays the separate Bode Plot window if enabled.
+   */
+  void DisplayBodePlot();
+
+  /**
    * Displays calculated feedback gains.
    */
   void DisplayFeedbackGains();
@@ -231,6 +256,9 @@ class Analyzer : public wpi::glass::View {
   wpi::units::millisecond_t m_timescale;
   bool m_timescaleValid = false;
 
+  int m_selectedControlEffortUnit = 0;
+  int m_selectedTargetFramework = 0;
+
   // Units
   int m_selectedOverrideUnit = 0;
 
@@ -249,6 +277,8 @@ class Analyzer : public wpi::glass::View {
   // Stores graph scroll bar position and states for keeping track of scroll
   // positions after loading graphs
   float m_graphScroll = 0;
+
+  bool m_showBodePlot = false;
 
   std::atomic<bool> m_abortDataPrep{false};
   std::thread m_dataThread;

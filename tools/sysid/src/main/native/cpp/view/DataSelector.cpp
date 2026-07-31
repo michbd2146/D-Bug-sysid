@@ -169,6 +169,7 @@ void DataSelector::Display() {
   EmitEntryTarget("Velocity", false, &m_velocityEntry);
   EmitEntryTarget("Position", false, &m_positionEntry);
   EmitEntryTarget("Voltage", false, &m_voltageEntry);
+  EmitEntryTarget("Torque Current", false, &m_torqueCurrentEntry);
 
   ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7);
   ImGui::Combo("Units", &m_selectedUnit, kUnits, IM_ARRAYSIZE(kUnits));
@@ -177,7 +178,7 @@ void DataSelector::Display() {
   ImGui::InputDouble("Position scaling", &m_positionScale);
 
   if (/*!m_selectedTest.empty() &&*/ m_velocityEntry && m_positionEntry &&
-      m_voltageEntry) {
+      (m_voltageEntry || m_torqueCurrentEntry)) {
     if (ImGui::Button("Load")) {
       m_testdataFuture =
           std::async(std::launch::async, [this] { return BuildTestData(); });
@@ -193,6 +194,7 @@ void DataSelector::Reset() {
   m_velocityEntry = nullptr;
   m_positionEntry = nullptr;
   m_voltageEntry = nullptr;
+  m_torqueCurrentEntry = nullptr;
   m_testdataFuture = {};
   m_testdataStats.clear();
   m_executedTests.clear();
@@ -255,6 +257,8 @@ void DataSelector::SetReader(wpi::log::DataLogReaderThread* reader) {
         routine.positionEntry = dataEntry;
       } else if (field == "velocity" && !routine.velocityEntry) {
         routine.velocityEntry = dataEntry;
+      } else if (field == "torqueCurrent" && !routine.torqueCurrentEntry) {
+        routine.torqueCurrentEntry = dataEntry;
       }
     }
     m_detectedRoutines.emplace_back(std::move(routine));
@@ -279,6 +283,7 @@ void DataSelector::ApplyDetectedRoutine(int index) {
 
   m_testStateEntry = r.testStateEntry;
   m_voltageEntry = r.voltageEntry;
+  m_torqueCurrentEntry = r.torqueCurrentEntry;
   m_positionEntry = r.positionEntry;
   m_velocityEntry = r.velocityEntry;
 
@@ -305,7 +310,7 @@ void DataSelector::DisplayAutoDetect() {
   std::vector<std::string> labels;
   labels.reserve(m_detectedRoutines.size());
   for (const auto& r : m_detectedRoutines) {
-    bool complete = r.voltageEntry && r.positionEntry && r.velocityEntry;
+    bool complete = r.testStateEntry && (r.voltageEntry || r.torqueCurrentEntry) && r.positionEntry && r.velocityEntry;
     labels.emplace_back(complete ? r.name
                                  : std::format("{} (incomplete)", r.name));
   }
@@ -327,7 +332,7 @@ void DataSelector::DisplayAutoDetect() {
 
   ImGui::SameLine();
   const auto& selected = m_detectedRoutines[m_selectedRoutine];
-  bool canLoad = selected.testStateEntry && selected.voltageEntry &&
+  bool canLoad = selected.testStateEntry && (selected.voltageEntry || selected.torqueCurrentEntry) &&
                  selected.positionEntry && selected.velocityEntry;
   if (!canLoad) {
     ImGui::BeginDisabled();
@@ -338,11 +343,11 @@ void DataSelector::DisplayAutoDetect() {
   if (!canLoad) {
     ImGui::EndDisabled();
     sysid::CreateTooltip(
-        "Could not find all required entries (voltage, position, velocity) "
+        "Could not find all required entries (voltage or torqueCurrent, position, velocity) "
         "for this routine. Try manually assigning them below.");
   } else {
     sysid::CreateTooltip(
-        "Automatically assigns the detected voltage, position, velocity, "
+        "Automatically assigns the detected voltage or torqueCurrent, position, velocity, "
         "and test-state entries for this SysId routine.");
   }
 
@@ -452,16 +457,21 @@ TestData DataSelector::BuildTestData() {
 
   // read and sort the entire dataset first; this is memory hungry but
   // dramatically speeds up splitting it into runs.
-  auto voltageData = GetData(*m_voltageEntry, 1.0);
+  auto voltageData = m_voltageEntry ? GetData(*m_voltageEntry, 1.0) : std::vector<std::pair<int64_t, double>>{};
+  auto torqueCurrentData = m_torqueCurrentEntry ? GetData(*m_torqueCurrentEntry, 1.0) : std::vector<std::pair<int64_t, double>>{};
   auto positionData = GetData(*m_positionEntry, m_positionScale);
   auto velocityData = GetData(*m_velocityEntry, m_velocityScale);
 
   for (auto&& test : m_tests) {
     for (auto&& state : test.second) {
+      if (state.second.empty()) {
+        continue;
+      }
       auto& motorData = data.motorData[state.first];
       for (auto [tsbegin, tsend] : state.second) {
         auto& run = motorData.runs.emplace_back();
-        AddSamples(run.voltage, voltageData, tsbegin, tsend);
+        if (m_voltageEntry) AddSamples(run.voltage, voltageData, tsbegin, tsend);
+        if (m_torqueCurrentEntry) AddSamples(run.torqueCurrent, torqueCurrentData, tsbegin, tsend);
         AddSamples(run.position, positionData, tsbegin, tsend);
         AddSamples(run.velocity, velocityData, tsbegin, tsend);
       }

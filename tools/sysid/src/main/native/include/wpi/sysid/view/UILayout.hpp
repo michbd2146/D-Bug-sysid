@@ -59,7 +59,7 @@ inline constexpr int kWindowGap = 5;
 // Left column position and size
 inline constexpr Vector2d kLeftColPos{kWindowGap, kMenubarHeight + kWindowGap};
 inline constexpr Vector2d kLeftColSize{
-    310, kAppWindowSize.y - kLeftColPos.y - kWindowGap};
+    270, kAppWindowSize.y - kLeftColPos.y - kWindowGap};
 
 // Left column contents
 inline constexpr Vector2d kLogLoaderWindowPos = kLeftColPos;
@@ -73,7 +73,7 @@ inline constexpr Vector2d kDataSelectorWindowSize{
 inline constexpr Vector2d kCenterColPos =
     kLeftColPos + Vector2d{kLeftColSize.x + kWindowGap, 0};
 inline constexpr Vector2d kCenterColSize{
-    360, kAppWindowSize.y - kLeftColPos.y - kWindowGap};
+    400, kAppWindowSize.y - kLeftColPos.y - kWindowGap};
 
 // Center column contents
 inline constexpr Vector2d kAnalyzerWindowPos = kCenterColPos;
@@ -103,34 +103,34 @@ inline constexpr int kTextBoxWidthMultiple = 10;
 // At the reference resolution of 1280×720 each cell is 20×20 px.
 // GridLayout scales these assignments to any display size automatically.
 //
-// Column mapping at 1280×720 (cellW = 20 px):
-//   Left   column : col  0 – 15  (cols 0-15,  320 px  ≈ 310 px left col)
-//   Center column : col 16 – 33  (cols 16-33, 360 px  ≈ 360 px center col)
+// Column mapping at 1280x720 (cellW = 20 px):
+//   Left   column : col  0 – 13  (cols 0-13,  280 px  ≈ 270 px left col)
+//   Center column : col 14 – 33  (cols 14-33, 400 px  ≈ 400 px center col)
 //   Right  column : col 34 – 63  (cols 34-63, 600 px  ≈ 590 px right col)
 // ---------------------------------------------------------------------------
 
 /// Default GridCell for the "Log Loader" window (left column, top)
 inline constexpr int kLogLoaderDefaultCol     = 0;
 inline constexpr int kLogLoaderDefaultRow     = 0;
-inline constexpr int kLogLoaderDefaultColSpan = 16;
+inline constexpr int kLogLoaderDefaultColSpan = 10;
 inline constexpr int kLogLoaderDefaultRowSpan = 22;
 
 /// Default GridCell for the "Data Selector" window (left column, bottom)
 inline constexpr int kDataSelectorDefaultCol     = 0;
 inline constexpr int kDataSelectorDefaultRow     = 22;
-inline constexpr int kDataSelectorDefaultColSpan = 16;
+inline constexpr int kDataSelectorDefaultColSpan = 10;
 inline constexpr int kDataSelectorDefaultRowSpan = 13;
 
 /// Default GridCell for the "Analyzer" window (center column, top)
-inline constexpr int kAnalyzerDefaultCol     = 16;
+inline constexpr int kAnalyzerDefaultCol     = 10;
 inline constexpr int kAnalyzerDefaultRow     = 0;
-inline constexpr int kAnalyzerDefaultColSpan = 18;
+inline constexpr int kAnalyzerDefaultColSpan = 24;
 inline constexpr int kAnalyzerDefaultRowSpan = 25;
 
 /// Default GridCell for the "Program Log" window (center column, bottom)
-inline constexpr int kProgramLogDefaultCol     = 16;
+inline constexpr int kProgramLogDefaultCol     = 10;
 inline constexpr int kProgramLogDefaultRow     = 25;
-inline constexpr int kProgramLogDefaultColSpan = 18;
+inline constexpr int kProgramLogDefaultColSpan = 24;
 inline constexpr int kProgramLogDefaultRowSpan = 10;
 
 /// Default GridCell for the "Diagnostic Plots" window (right column, full height)

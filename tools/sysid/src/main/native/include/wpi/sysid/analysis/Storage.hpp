@@ -30,6 +30,7 @@ struct MotorData {
       T measurement;
     };
     std::vector<Sample<wpi::units::volt_t>> voltage;
+    std::vector<Sample<double>> torqueCurrent;
     std::vector<Sample<double>> position;
     std::vector<Sample<double>> velocity;
   };
@@ -57,6 +58,11 @@ struct PreparedData {
    * The voltage of the data point.
    */
   double voltage;
+
+  /**
+   * The torque current of the data point.
+   */
+  double torqueCurrent = 0.0;
 
   /**
    * The position of the data point.
@@ -98,6 +104,7 @@ struct PreparedData {
    */
   constexpr bool operator==(const PreparedData& rhs) const {
     return timestamp == rhs.timestamp && voltage == rhs.voltage &&
+           torqueCurrent == rhs.torqueCurrent &&
            position == rhs.position && velocity == rhs.velocity &&
            dt == rhs.dt && acceleration == rhs.acceleration && cos == rhs.cos;
   }

@@ -59,7 +59,7 @@ sysid::Storage CollectData(Model& model, std::bitset<4> movements) {
     voltage = 0_V;
     for (int i = 0; i < (kTestDuration / T).value(); ++i) {
       slowForward.emplace_back(sysid::PreparedData{
-          i * T, voltage.value(), model.GetPosition(), model.GetVelocity(), T,
+          i * T, voltage.value(), 0.0, model.GetPosition(), model.GetVelocity(), T,
           model.GetAcceleration(voltage), std::cos(model.GetPosition()),
           std::sin(model.GetPosition())});
 
@@ -74,7 +74,7 @@ sysid::Storage CollectData(Model& model, std::bitset<4> movements) {
     voltage = 0_V;
     for (int i = 0; i < (kTestDuration / T).value(); ++i) {
       slowBackward.emplace_back(sysid::PreparedData{
-          i * T, voltage.value(), model.GetPosition(), model.GetVelocity(), T,
+          i * T, voltage.value(), 0.0, model.GetPosition(), model.GetVelocity(), T,
           model.GetAcceleration(voltage), std::cos(model.GetPosition()),
           std::sin(model.GetPosition())});
 
@@ -89,7 +89,7 @@ sysid::Storage CollectData(Model& model, std::bitset<4> movements) {
     voltage = 0_V;
     for (int i = 0; i < (kTestDuration / T).value(); ++i) {
       fastForward.emplace_back(sysid::PreparedData{
-          i * T, voltage.value(), model.GetPosition(), model.GetVelocity(), T,
+          i * T, voltage.value(), 0.0, model.GetPosition(), model.GetVelocity(), T,
           model.GetAcceleration(voltage), std::cos(model.GetPosition()),
           std::sin(model.GetPosition())});
 
@@ -104,7 +104,7 @@ sysid::Storage CollectData(Model& model, std::bitset<4> movements) {
     voltage = 0_V;
     for (int i = 0; i < (kTestDuration / T).value(); ++i) {
       fastBackward.emplace_back(sysid::PreparedData{
-          i * T, voltage.value(), model.GetPosition(), model.GetVelocity(), T,
+          i * T, voltage.value(), 0.0, model.GetPosition(), model.GetVelocity(), T,
           model.GetAcceleration(voltage), std::cos(model.GetPosition()),
           std::sin(model.GetPosition())});
 

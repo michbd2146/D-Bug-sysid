@@ -52,24 +52,38 @@ static double Lerp(wpi::units::second_t time,
  *
  * @return A PreparedData vector
  */
-static std::vector<PreparedData> ConvertToPrepared(const MotorData& data) {
+static std::vector<PreparedData> ConvertToPrepared(const MotorData& data, bool isTorqueCurrent) {
   std::vector<PreparedData> prepared;
 
   // Assume we've selected down to a single contiguous run by this point
   auto run = data.runs[0];
 
-  for (int i = 0; i < static_cast<int>(run.voltage.size()) - 1; ++i) {
-    const auto& currentVoltage = run.voltage[i];
-    const auto& nextVoltage = run.voltage[i + 1];
+  size_t loopCount = isTorqueCurrent ? run.torqueCurrent.size() : run.voltage.size();
+  for (int i = 0; i < static_cast<int>(loopCount) - 1; ++i) {
+    wpi::units::second_t currentTime;
+    wpi::units::second_t nextTime;
+    double effort = 0.0;
+    double torqueCurrent = 0.0;
 
-    auto currentPosition = Lerp(currentVoltage.time, run.position);
+    if (isTorqueCurrent) {
+      currentTime = run.torqueCurrent[i].time;
+      nextTime = run.torqueCurrent[i + 1].time;
+      effort = run.torqueCurrent[i].measurement;
+      torqueCurrent = effort;
+    } else {
+      currentTime = run.voltage[i].time;
+      nextTime = run.voltage[i + 1].time;
+      effort = run.voltage[i].measurement.value();
+    }
 
-    auto currentVelocity = Lerp(currentVoltage.time, run.velocity);
+    auto currentPosition = Lerp(currentTime, run.position);
+    auto currentVelocity = Lerp(currentTime, run.velocity);
 
-    prepared.emplace_back(PreparedData{currentVoltage.time,
-                                       currentVoltage.measurement.value(),
+    prepared.emplace_back(PreparedData{currentTime,
+                                       effort,
+                                       torqueCurrent,
                                        currentPosition, currentVelocity,
-                                       nextVoltage.time - currentVoltage.time});
+                                       nextTime - currentTime});
   }
 
   return prepared;
@@ -86,15 +100,19 @@ static std::vector<PreparedData> ConvertToPrepared(const MotorData& data) {
  */
 static void CopyRawData(wpi::util::StringMap<MotorData>* dataset) {
   auto& data = *dataset;
+  std::vector<std::pair<std::string, MotorData>> toAdd;
   // Loads the Raw Data
   for (auto& it : data) {
     auto& key = it.first;
     auto& motorData = it.second;
 
     if (!wpi::util::contains(key, "raw")) {
-      data[std::format("raw-{}", key)] = motorData;
-      data[std::format("original-raw-{}", key)] = motorData;
+      toAdd.emplace_back(std::format("raw-{}", key), motorData);
+      toAdd.emplace_back(std::format("original-raw-{}", key), motorData);
     }
+  }
+  for (auto& pair : toAdd) {
+    data[pair.first] = std::move(pair.second);
   }
 }
 
@@ -126,15 +144,29 @@ void AnalysisManager::PrepareGeneralData() {
   for (auto& it : m_data.motorData) {
     auto key = it.first;
 
+    if (m_data.motorData[key].runs.empty()) {
+      continue;
+    }
+
     // Assume we've selected down to a single contiguous run by this point
     auto run = m_data.motorData[key].runs[0];
 
+    // If voltage is missing but torque current is present, auto-fallback to Torque Current mode
+    if (run.voltage.size() < 2 && run.torqueCurrent.size() >= 2) {
+      m_settings.isTorqueCurrent = true;
+    }
+
     // Ensure data has at least two samples in it or linear interpolation within
     // ConvertToPrepared() will fail
-    if (run.voltage.size() < 2) {
+    if (!m_settings.isTorqueCurrent && run.voltage.size() < 2) {
       throw sysid::InvalidDataError(std::format(
           "{} data has {} voltage samples and at least 2 are required.", key,
           run.voltage.size()));
+    }
+    if (m_settings.isTorqueCurrent && run.torqueCurrent.size() < 2) {
+      throw sysid::InvalidDataError(std::format(
+          "{} data has {} torque current samples and at least 2 are required.", key,
+          run.torqueCurrent.size()));
     }
     if (run.position.size() < 2) {
       throw sysid::InvalidDataError(std::format(
@@ -147,7 +179,7 @@ void AnalysisManager::PrepareGeneralData() {
           run.velocity.size()));
     }
 
-    preparedData[key] = ConvertToPrepared(m_data.motorData[key]);
+    preparedData[key] = ConvertToPrepared(m_data.motorData[key], m_settings.isTorqueCurrent);
     WPI_INFO(m_logger, "SAMPLES {}", preparedData[key].size());
   }
 
@@ -219,8 +251,9 @@ AnalysisManager::FeedforwardGains AnalysisManager::CalculateFeedforward() {
       sysid::CalculateFeedforwardGains(GetFilteredData(), analysisType, false);
 
   const auto& Ks = ff.coeffs[0];
+  std::string effortName = m_settings.isTorqueCurrent ? "Torque Current" : "Voltage";
   FeedforwardGain KsGain = {
-      .gain = Ks, .descriptor = "Voltage needed to overcome static friction."};
+      .gain = Ks, .descriptor = std::format("{} needed to overcome static friction.", effortName)};
   if (Ks < 0) {
     KsGain.isValidGain = false;
     KsGain.errorMessage = std::format(
@@ -230,10 +263,10 @@ AnalysisManager::FeedforwardGains AnalysisManager::CalculateFeedforward() {
   const auto& Kv = ff.coeffs[1];
   FeedforwardGain KvGain = {
       .gain = Kv,
-      .descriptor =
-          "Voltage needed to hold/cruise at a constant velocity while "
+      .descriptor = std::format(
+          "{} needed to hold/cruise at a constant velocity while "
           "overcoming the counter-electromotive force and any additional "
-          "friction."};
+          "friction.", effortName)};
   if (Kv < 0) {
     KvGain.isValidGain = false;
     KvGain.errorMessage = std::format(
@@ -243,8 +276,8 @@ AnalysisManager::FeedforwardGains AnalysisManager::CalculateFeedforward() {
   const auto& Ka = ff.coeffs[2];
   FeedforwardGain KaGain = {
       .gain = Ka,
-      .descriptor =
-          "Voltage needed to induce a given acceleration in the motor shaft."};
+      .descriptor = std::format(
+          "{} needed to induce a given acceleration in the motor shaft.", effortName)};
   if (Ka <= 0) {
     KaGain.isValidGain = false;
     KaGain.errorMessage = std::format(
@@ -259,7 +292,7 @@ AnalysisManager::FeedforwardGains AnalysisManager::CalculateFeedforward() {
   if (analysisType == analysis::kElevator || analysisType == analysis::kArm) {
     const auto& Kg = ff.coeffs[3];
     FeedforwardGain KgGain = {
-        Kg, "Voltage needed to counteract the force of gravity."};
+        Kg, std::format("{} needed to counteract the force of gravity.", effortName)};
     if (Kg < 0) {
       KgGain.isValidGain = false;
       KgGain.errorMessage = std::format(

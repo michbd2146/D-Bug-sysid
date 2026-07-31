@@ -70,6 +70,11 @@ class AnalysisManager {
      * zero indicates it needs to be set to the default.
      */
     wpi::units::second_t stepTestDuration = 0_s;
+
+    /**
+     * Whether the control effort unit is Torque Current (Amps) instead of Voltage (Volts).
+     */
+    bool isTorqueCurrent = false;
   };
 
   struct FeedforwardGain {

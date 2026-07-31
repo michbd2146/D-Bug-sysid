@@ -46,6 +46,7 @@ class DataSelector : public wpi::glass::View {
     std::string name;
     const wpi::log::DataLogReaderEntry* testStateEntry = nullptr;
     const wpi::log::DataLogReaderEntry* voltageEntry = nullptr;
+    const wpi::log::DataLogReaderEntry* torqueCurrentEntry = nullptr;
     const wpi::log::DataLogReaderEntry* positionEntry = nullptr;
     const wpi::log::DataLogReaderEntry* velocityEntry = nullptr;
   };
@@ -96,6 +97,7 @@ class DataSelector : public wpi::glass::View {
   const wpi::log::DataLogReaderEntry* m_velocityEntry = nullptr;
   const wpi::log::DataLogReaderEntry* m_positionEntry = nullptr;
   const wpi::log::DataLogReaderEntry* m_voltageEntry = nullptr;
+  const wpi::log::DataLogReaderEntry* m_torqueCurrentEntry = nullptr;
   double m_velocityScale = 1.0;
   double m_positionScale = 1.0;
   int m_selectedUnit = 0;

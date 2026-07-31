@@ -183,6 +183,14 @@ bool Analyzer::DisplayResetAndUnitOverride() {
       "Type:               %s",
       std::string(unit).c_str(), type.name);
 
+  ImGui::Spacing();
+  ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+  if (ImGui::Combo("Control Effort Unit", &m_selectedControlEffortUnit,
+                   kControlEffortUnits, IM_ARRAYSIZE(kControlEffortUnits))) {
+    m_settings.isTorqueCurrent = (m_selectedControlEffortUnit == 1);
+    PrepareData();
+  }
+
   if (ImGui::Button("Override Units")) {
     ImGui::OpenPopup("Override Units");
   }
@@ -263,43 +271,72 @@ std::string Analyzer::GenerateCodeSnippet() const {
     java += "// === SysId Gains (Java) ===\n";
     java += std::format("// Unit: {}, Type: {}\n", unit, typeName);
 
-    if (isElevator) {
+    if (m_selectedTargetFramework == 0) { // WPILib
+      if (isElevator) {
+        java += std::format(
+            "ElevatorFeedforward feedforward =\n"
+            "    new ElevatorFeedforward(\n"
+            "        /* ks */ {:.5G},\n"
+            "        /* kg */ {:.5G},\n"
+            "        /* kv */ {:.5G},\n"
+            "        /* ka */ {:.5G});\n",
+            ks, kg, kv, ka);
+      } else if (isArm) {
+        java += std::format(
+            "ArmFeedforward feedforward =\n"
+            "    new ArmFeedforward(\n"
+            "        /* ks */ {:.5G},\n"
+            "        /* kg */ {:.5G},\n"
+            "        /* kv */ {:.5G},\n"
+            "        /* ka */ {:.5G});\n"
+            "// Arm horizontal angle offset: {:.5G}\n",
+            ks, kg, kv, ka, offset);
+      } else {
+        java += std::format(
+            "SimpleMotorFeedforward feedforward =\n"
+            "    new SimpleMotorFeedforward(\n"
+            "        /* ks */ {:.5G},\n"
+            "        /* kv */ {:.5G},\n"
+            "        /* ka */ {:.5G});\n",
+            ks, kv, ka);
+      }
+
       java += std::format(
-          "ElevatorFeedforward feedforward =\n"
-          "    new ElevatorFeedforward(\n"
-          "        /* ks */ {:.5G},\n"
-          "        /* kg */ {:.5G},\n"
-          "        /* kv */ {:.5G},\n"
-          "        /* ka */ {:.5G});\n",
-          ks, kg, kv, ka);
-    } else if (isArm) {
+          "\n"
+          "PIDController pidController =\n"
+          "    new PIDController(\n"
+          "        /* kp */ {:.5G},\n"
+          "        /* ki */ 0.0,\n"
+          "        /* kd */ {:.5G});\n",
+          kp, kd);
+    } else if (m_selectedTargetFramework == 1) { // CTRE
       java += std::format(
-          "ArmFeedforward feedforward =\n"
-          "    new ArmFeedforward(\n"
-          "        /* ks */ {:.5G},\n"
-          "        /* kg */ {:.5G},\n"
-          "        /* kv */ {:.5G},\n"
-          "        /* ka */ {:.5G});\n"
-          "// Arm horizontal angle offset: {:.5G}\n",
-          ks, kg, kv, ka, offset);
-    } else {
+          "TalonFXConfiguration config = new TalonFXConfiguration();\n"
+          "config.Slot0.kS = {:.5G};\n"
+          "config.Slot0.kV = {:.5G};\n"
+          "config.Slot0.kA = {:.5G};\n"
+          "config.Slot0.kG = {:.5G};\n"
+          "config.Slot0.kP = {:.5G};\n"
+          "config.Slot0.kD = {:.5G};\n",
+          ks, kv, ka, kg, kp, kd);
+      if (isArm) {
+        java += std::format("// Arm horizontal angle offset: {:.5G}\n", offset);
+      }
+    } else if (m_selectedTargetFramework == 2) { // REV
       java += std::format(
-          "SimpleMotorFeedforward feedforward =\n"
-          "    new SimpleMotorFeedforward(\n"
-          "        /* ks */ {:.5G},\n"
-          "        /* kv */ {:.5G},\n"
-          "        /* ka */ {:.5G});\n",
-          ks, kv, ka);
+          "SparkMaxConfig config = new SparkMaxConfig();\n"
+          "config.closedLoop\n"
+          "    .pid( {:.5G}, 0.0, {:.5G} )\n"
+          "    .velocityFF( {:.5G} )\n"
+          "    .outputRange(-1.0, 1.0);\n"
+          "// Note: REV SmartMotion does not natively support kS, kA, or kG.\n"
+          "// You must calculate them on the roboRIO using WPILib Feedforward classes.\n",
+          kp, kd, kv);
+      if (isArm) {
+        java += std::format("// Arm horizontal angle offset: {:.5G}\n", offset);
+      }
     }
 
-    java += std::format(
-        "\n"
-        "PIDController pidController =\n"
-        "    new PIDController(\n"
-        "        /* kp */ {:.5G},\n"
-        "        /* ki */ 0.0,\n"
-        "        /* kd */ {:.5G});\n",
-        kp, kd);
 
     return java;
   } catch (...) {
@@ -309,6 +346,7 @@ std::string Analyzer::GenerateCodeSnippet() const {
 
 void Analyzer::Display() {
   DisplayGraphs();
+  DisplayBodePlot();
 
   switch (m_state) {
     case AnalyzerState::kWaitingForData: {
@@ -583,9 +621,14 @@ void Analyzer::DisplayFeedforwardParameters(float beginX, float beginY) {
   if (displayAll || m_state == AnalyzerState::kTestDurationError) {
     SetPosition(beginX, beginY, kHorizontalOffset, 2);
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 4);
+    float minStep = m_manager->GetMinStepTime().value();
+    float maxStep = m_manager->GetMaxStepTime().value();
+    if (std::isinf(maxStep)) {
+      maxStep = 10.0f; // Provide a safe fallback if no valid dynamic data was found
+    }
     if (ImGui::SliderFloat("Test Duration", &m_stepTestDuration,
-                           m_manager->GetMinStepTime().value(),
-                           m_manager->GetMaxStepTime().value(), "%.2f")) {
+                           minStep,
+                           maxStep, "%.2f")) {
       m_settings.stepTestDuration = wpi::units::second_t{m_stepTestDuration};
       PrepareData();
     }
@@ -617,57 +660,10 @@ void Analyzer::CollectFeedforwardGains(float beginX, float beginY) {
   // System Dynamics & Stability Card (theoretical mode)
   const double Kv = m_feedforwardGains.Kv.gain;
   const double Ka = m_feedforwardGains.Ka.gain;
-  auto bodeResult = sysid::CalculateBodeAnalysis(Kv, Ka);
-  if (bodeResult.isValid) {
-    ImGui::Spacing();
-    ImGui::SeparatorText("System Dynamics & Stability");
-    ImGui::Text("  \u2022 Bandwidth (w_c):    %.2f Hz (%.2f rad/s)",
-                bodeResult.bandwidthHz, bodeResult.bandwidthRadPerSec);
-    ImGui::Text("  \u2022 Time Constant (tau): %.2f ms",
-                bodeResult.timeConstantSec * 1000.0);
-    ImGui::Text("  \u2022 Continuous Pole (s): %.2f rad/s",
-                bodeResult.poleLocation);
-    ImGui::Text("  \u2022 95%% Settling Time:  %.2f ms",
-                bodeResult.settlingTimeSec * 1000.0);
-  }
+  DisplaySystemDynamicsCard(Kv, Ka);
 
   // "Copy as Code" button in theoretical mode
-  ImGui::Spacing();
-  if (ImGui::Button("Copy as Code")) {
-    std::string snippet = GenerateCodeSnippet();
-    if (!snippet.empty()) {
-      bool copied = false;
-      try {
-        ImGui::SetClipboardText(snippet.c_str());
-        copied = true;
-      } catch (...) {}
-#ifdef _WIN32
-      if (CopyToWindowsClipboard(snippet)) {
-        copied = true;
-      }
-#endif
-      if (copied) {
-        m_lastCopiedAt = ImGui::GetTime();
-        m_copyErrorAt = -10.0;
-      } else {
-        m_copyErrorAt = ImGui::GetTime();
-        m_lastCopiedAt = -10.0;
-      }
-    } else {
-      m_copyErrorAt = ImGui::GetTime();
-      m_lastCopiedAt = -10.0;
-    }
-  }
-  sysid::CreateTooltip(
-      "Copies Java code snippets with the current gains to the "
-      "clipboard so you can paste them directly into your robot project.");
-  if (m_lastCopiedAt > 0.0 && ImGui::GetTime() - m_lastCopiedAt < 3.0) {
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Copied!");
-  } else if (m_copyErrorAt > 0.0 && ImGui::GetTime() - m_copyErrorAt < 3.0) {
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Nothing to copy!");
-  }
+  DisplayCodeSnippetOptions();
 }
 
 void Analyzer::DisplayFeedforwardGain(const char* text,
@@ -764,19 +760,18 @@ void Analyzer::DisplayFeedforwardGains(float beginX, float beginY) {
   // System Dynamics & Stability Card (MATLAB-inspired system analysis)
   const double Kv = m_feedforwardGains.Kv.gain;
   const double Ka = m_feedforwardGains.Ka.gain;
-  auto bodeResult = sysid::CalculateBodeAnalysis(Kv, Ka);
-  if (bodeResult.isValid) {
-    ImGui::Spacing();
-    ImGui::SeparatorText("System Dynamics & Stability");
-    ImGui::Text("  \u2022 Bandwidth (w_c):    %.2f Hz (%.2f rad/s)",
-                bodeResult.bandwidthHz, bodeResult.bandwidthRadPerSec);
-    ImGui::Text("  \u2022 Time Constant (tau): %.2f ms", bodeResult.timeConstantSec * 1000.0);
-    ImGui::Text("  \u2022 Continuous Pole (s): %.2f rad/s", bodeResult.poleLocation);
-    ImGui::Text("  \u2022 95%% Settling Time:  %.2f ms", bodeResult.settlingTimeSec * 1000.0);
-  }
+  DisplaySystemDynamicsCard(Kv, Ka);
 
   // "Copy as Code" button – generates Java snippet from current gains.
+  DisplayCodeSnippetOptions();
+}
+
+void Analyzer::DisplayCodeSnippetOptions() {
   ImGui::Spacing();
+  ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+  ImGui::Combo("Target Framework", &m_selectedTargetFramework, kTargetFrameworks, IM_ARRAYSIZE(kTargetFrameworks));
+  
+  ImGui::SameLine();
   if (ImGui::Button("Copy as Code")) {
     std::string snippet = GenerateCodeSnippet();
     if (!snippet.empty()) {
@@ -813,6 +808,84 @@ void Analyzer::DisplayFeedforwardGains(float beginX, float beginY) {
     ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Nothing to copy!");
   }
 }
+
+
+void Analyzer::DisplaySystemDynamicsCard(double Kv, double Ka) {
+  auto bodeResult = sysid::CalculateBodeAnalysis(Kv, Ka);
+  if (bodeResult.isValid) {
+    ImGui::Spacing();
+    ImGui::SeparatorText("System Dynamics & Stability");
+    ImGui::Text("  \u2022 Bandwidth (w_c):    %.2f Hz (%.2f rad/s)",
+                bodeResult.bandwidthHz, bodeResult.bandwidthRadPerSec);
+    ImGui::Text("  \u2022 Time Constant (tau): %.2f ms", bodeResult.timeConstantSec * 1000.0);
+    ImGui::Text("  \u2022 Continuous Pole (s): %.2f rad/s", bodeResult.poleLocation);
+    ImGui::Text("  \u2022 95%% Settling Time:  %.2f ms", bodeResult.settlingTimeSec * 1000.0);
+
+    double tau = bodeResult.timeConstantSec;
+    double K = 1.0 / Kv;
+    double T = m_settings.preset.period.value();
+
+    double z_pole = std::exp(-T / tau);
+
+    ImGui::Spacing();
+    ImGui::Text("Transfer Functions:");
+    ImGui::Text("  \u2022 System Gain (K):     %.5G", K);
+    if (m_settings.type == FeedbackControllerLoopType::kPosition) {
+      ImGui::Text("  \u2022 G(s) [Position]:     %.5G / (s * (%.5G s + 1))", K, tau);
+      double z_num2 = tau * (1.0 - z_pole);
+      ImGui::Text("  \u2022 G(z) [Position]:     %.5G * [ %.5G / (z - 1) - %.5G / (z - %.5G) ]", K, T, z_num2, z_pole);
+    } else {
+      ImGui::Text("  \u2022 G(s) [Velocity]:     %.5G / (%.5G s + 1)", K, tau);
+      double z_num = K * (1.0 - z_pole);
+      ImGui::Text("  \u2022 G(z) [Velocity]:     %.5G / (z - %.5G)", z_num, z_pole);
+    }
+    ImGui::Text("                         (Ts = %.1f ms)", T * 1000.0);
+
+    ImGui::Spacing();
+    ImGui::Checkbox("Show Theoretical Bode Plot", &m_showBodePlot);
+  }
+}
+
+void Analyzer::DisplayBodePlot() {
+  if (!m_showBodePlot) return;
+
+  const double Kv = m_feedforwardGains.Kv.gain;
+  const double Ka = m_feedforwardGains.Ka.gain;
+  auto bodeResult = sysid::CalculateBodeAnalysis(Kv, Ka);
+
+  if (!bodeResult.isValid || bodeResult.points.empty()) {
+    return;
+  }
+
+  ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
+  if (ImGui::Begin("Theoretical Bode Plot", &m_showBodePlot)) {
+    std::vector<double> freqHz(bodeResult.points.size());
+    std::vector<double> magDb(bodeResult.points.size());
+    std::vector<double> phaseDeg(bodeResult.points.size());
+
+    for (size_t i = 0; i < bodeResult.points.size(); ++i) {
+      freqHz[i] = bodeResult.points[i].frequencyHz;
+      magDb[i] = bodeResult.points[i].magnitudeDb;
+      phaseDeg[i] = bodeResult.points[i].phaseDeg;
+    }
+
+    if (ImPlot::BeginPlot("Magnitude Response", ImVec2(-1, 0.45f * ImGui::GetContentRegionAvail().y))) {
+      ImPlot::SetupAxes("Frequency (Hz)", "Magnitude (dB)");
+      ImPlot::SetupAxisScale(ImAxis_X1, ImPlotScale_Log10);
+      ImPlot::PlotLine("Magnitude (dB)", freqHz.data(), magDb.data(), freqHz.size());
+      ImPlot::EndPlot();
+    }
+    
+    if (ImPlot::BeginPlot("Phase Response", ImVec2(-1, 0.85f * ImGui::GetContentRegionAvail().y))) {
+      ImPlot::SetupAxes("Frequency (Hz)", "Phase (deg)");
+      ImPlot::SetupAxisScale(ImAxis_X1, ImPlotScale_Log10);
+      ImPlot::PlotLine("Phase (deg)", freqHz.data(), phaseDeg.data(), freqHz.size());
+      ImPlot::EndPlot();
+    }
+  }
+  ImGui::End();
+}
+
 
 void Analyzer::DisplayFeedbackGains() {
   // Allow the user to select a feedback controller preset.

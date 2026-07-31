@@ -16,17 +16,17 @@
 
 TEST_CASE("FilterTest MedianFilter", "[sysid]") {
   std::vector<sysid::PreparedData> testData{
-      sysid::PreparedData{0_s, 0, 0, 0},    sysid::PreparedData{0_s, 0, 0, 1},
-      sysid::PreparedData{0_s, 0, 0, 10},   sysid::PreparedData{0_s, 0, 0, 5},
-      sysid::PreparedData{0_s, 0, 0, 3},    sysid::PreparedData{0_s, 0, 0, 0},
-      sysid::PreparedData{0_s, 0, 0, 1000}, sysid::PreparedData{0_s, 0, 0, 7},
-      sysid::PreparedData{0_s, 0, 0, 6},    sysid::PreparedData{0_s, 0, 0, 5}};
+      sysid::PreparedData{0_s, 0, 0, 0, 0},    sysid::PreparedData{0_s, 0, 0, 0, 1},
+      sysid::PreparedData{0_s, 0, 0, 0, 10},   sysid::PreparedData{0_s, 0, 0, 0, 5},
+      sysid::PreparedData{0_s, 0, 0, 0, 3},    sysid::PreparedData{0_s, 0, 0, 0, 0},
+      sysid::PreparedData{0_s, 0, 0, 0, 1000}, sysid::PreparedData{0_s, 0, 0, 0, 7},
+      sysid::PreparedData{0_s, 0, 0, 0, 6},    sysid::PreparedData{0_s, 0, 0, 0, 5}};
   std::vector<sysid::PreparedData> expectedData{
-      sysid::PreparedData{0_s, 0, 0, 0}, sysid::PreparedData{0_s, 0, 0, 1},
-      sysid::PreparedData{0_s, 0, 0, 5}, sysid::PreparedData{0_s, 0, 0, 5},
-      sysid::PreparedData{0_s, 0, 0, 3}, sysid::PreparedData{0_s, 0, 0, 3},
-      sysid::PreparedData{0_s, 0, 0, 7}, sysid::PreparedData{0_s, 0, 0, 7},
-      sysid::PreparedData{0_s, 0, 0, 6}, sysid::PreparedData{0_s, 0, 0, 5}};
+      sysid::PreparedData{0_s, 0, 0, 0, 0}, sysid::PreparedData{0_s, 0, 0, 0, 1},
+      sysid::PreparedData{0_s, 0, 0, 0, 5}, sysid::PreparedData{0_s, 0, 0, 0, 5},
+      sysid::PreparedData{0_s, 0, 0, 0, 3}, sysid::PreparedData{0_s, 0, 0, 0, 3},
+      sysid::PreparedData{0_s, 0, 0, 0, 7}, sysid::PreparedData{0_s, 0, 0, 0, 7},
+      sysid::PreparedData{0_s, 0, 0, 0, 6}, sysid::PreparedData{0_s, 0, 0, 0, 5}};
 
   sysid::ApplyMedianFilter(&testData, 3);
   CHECK(expectedData == testData);
@@ -34,11 +34,11 @@ TEST_CASE("FilterTest MedianFilter", "[sysid]") {
 
 TEST_CASE("FilterTest NoiseFloor", "[sysid]") {
   std::vector<sysid::PreparedData> testData = {
-      {0_s, 1, 2, 3, 5_ms, 0, 0},    {1_s, 1, 2, 3, 5_ms, 1, 0},
-      {2_s, 1, 2, 3, 5_ms, 2, 0},    {3_s, 1, 2, 3, 5_ms, 5, 0},
-      {4_s, 1, 2, 3, 5_ms, 0.35, 0}, {5_s, 1, 2, 3, 5_ms, 0.15, 0},
-      {6_s, 1, 2, 3, 5_ms, 0, 0},    {7_s, 1, 2, 3, 5_ms, 0.02, 0},
-      {8_s, 1, 2, 3, 5_ms, 0.01, 0}, {9_s, 1, 2, 3, 5_ms, 0, 0}};
+      {0_s, 1, 0, 2, 3, 5_ms, 0, 0},    {1_s, 1, 0, 2, 3, 5_ms, 1, 0},
+      {2_s, 1, 0, 2, 3, 5_ms, 2, 0},    {3_s, 1, 0, 2, 3, 5_ms, 5, 0},
+      {4_s, 1, 0, 2, 3, 5_ms, 0.35, 0}, {5_s, 1, 0, 2, 3, 5_ms, 0.15, 0},
+      {6_s, 1, 0, 2, 3, 5_ms, 0, 0},    {7_s, 1, 0, 2, 3, 5_ms, 0.02, 0},
+      {8_s, 1, 0, 2, 3, 5_ms, 0.01, 0}, {9_s, 1, 0, 2, 3, 5_ms, 0, 0}};
   double noiseFloor =
       GetNoiseFloor(testData, 2, [](auto&& pt) { return pt.acceleration; });
   CHECK(0.953 == Catch::Approx(noiseFloor).margin(0.001));
@@ -63,11 +63,11 @@ void FillStepVoltageData(std::vector<sysid::PreparedData>& data) {
 TEST_CASE("FilterTest StepTrim", "[sysid]") {
   {
     std::vector<sysid::PreparedData> forwardTestData = {
-        {0_s, 1, 0, 0, 1_s, 0},  {0_s, 1, 0, 0, 1_s, 0.25},
-        {0_s, 1, 0, 0, 1_s, 10}, {0_s, 1, 0, 0, 1_s, 0.45},
-        {0_s, 1, 0, 0, 1_s, 0},  {0_s, 1, 0, 0, 1_s, 0.15},
-        {0_s, 1, 0, 0, 1_s, 0},  {0_s, 1, 0, 0, 1_s, 0.02},
-        {0_s, 1, 0, 0, 1_s, 0},  {0_s, 1, 0, 0, 0_s, 0},
+        {0_s, 1, 0, 0, 0, 1_s, 0},  {0_s, 1, 0, 0, 0, 1_s, 0.25},
+        {0_s, 1, 0, 0, 0, 1_s, 10}, {0_s, 1, 0, 0, 0, 1_s, 0.45},
+        {0_s, 1, 0, 0, 0, 1_s, 0},  {0_s, 1, 0, 0, 0, 1_s, 0.15},
+        {0_s, 1, 0, 0, 0, 1_s, 0},  {0_s, 1, 0, 0, 0, 1_s, 0.02},
+        {0_s, 1, 0, 0, 0, 1_s, 0},  {0_s, 1, 0, 0, 0, 0_s, 0},
     };
 
     FillStepVoltageData(forwardTestData);
@@ -87,11 +87,11 @@ TEST_CASE("FilterTest StepTrim", "[sysid]") {
 
   {
     std::vector<sysid::PreparedData> backwardsTestData = {
-        {0_s, -1, 0, 0, 1_s, 0},     {0_s, -1, 0, 0, 1_s, -0.46},
-        {0_s, -1, 0, 0, 1_s, -8},    {0_s, -1, 0, 0, 1_s, -0.32},
-        {0_s, -1, 0, 0, 1_s, -0.12}, {0_s, -1, 0, 0, 1_s, -0.08},
-        {0_s, -1, 0, 0, 1_s, -0.06}, {0_s, -1, 0, 0, 1_s, -0.02},
-        {0_s, -1, 0, 0, 1_s, 0},     {0_s, -1, 0, 0, 0_s, 0},
+        {0_s, -1, 0, 0, 0, 1_s, 0},     {0_s, -1, 0, 0, 0, 1_s, -0.46},
+        {0_s, -1, 0, 0, 0, 1_s, -8},    {0_s, -1, 0, 0, 0, 1_s, -0.32},
+        {0_s, -1, 0, 0, 0, 1_s, -0.12}, {0_s, -1, 0, 0, 0, 1_s, -0.08},
+        {0_s, -1, 0, 0, 0, 1_s, -0.06}, {0_s, -1, 0, 0, 0, 1_s, -0.02},
+        {0_s, -1, 0, 0, 0, 1_s, 0},     {0_s, -1, 0, 0, 0, 0_s, 0},
     };
 
     FillStepVoltageData(backwardsTestData);
@@ -112,11 +112,11 @@ TEST_CASE("FilterTest StepTrim", "[sysid]") {
   {
     // Forward test but with an erroneous negative acceleration at the end
     std::vector<sysid::PreparedData> noisyTestData = {
-        {0_s, 1, 0, 0, 1_s, 0},    {0_s, 1, 0, 0, 1_s, 0.41},
-        {0_s, 1, 0, 0, 1_s, 11.5}, {0_s, 1, 0, 0, 1_s, 1.2},
-        {0_s, 1, 0, 0, 1_s, 0.34}, {0_s, 1, 0, 0, 1_s, 0.25},
-        {0_s, 1, 0, 0, 1_s, 0.11}, {0_s, 1, 0, 0, 1_s, -0.08},
-        {0_s, 1, 0, 0, 1_s, -12},  {0_s, 1, 0, 0, 0_s, 0},
+        {0_s, 1, 0, 0, 0, 1_s, 0},    {0_s, 1, 0, 0, 0, 1_s, 0.41},
+        {0_s, 1, 0, 0, 0, 1_s, 11.5}, {0_s, 1, 0, 0, 0, 1_s, 1.2},
+        {0_s, 1, 0, 0, 0, 1_s, 0.34}, {0_s, 1, 0, 0, 0, 1_s, 0.25},
+        {0_s, 1, 0, 0, 0, 1_s, 0.11}, {0_s, 1, 0, 0, 0, 1_s, -0.08},
+        {0_s, 1, 0, 0, 0, 1_s, -12},  {0_s, 1, 0, 0, 0, 0_s, 0},
     };
 
     FillStepVoltageData(noisyTestData);
