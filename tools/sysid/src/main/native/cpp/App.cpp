@@ -367,7 +367,7 @@ void Application(std::string_view saveDir) {
       about = false;
     }
     if (ImGui::BeginPopupModal("About")) {
-      ImGui::Text("D-Bug SysId v3.2 - System Identification for Robot Mechanisms");
+      ImGui::Text("D-Bug SysId v4.0 - System Identification for Robot Mechanisms");
       ImGui::Separator();
       ImGui::Text("WPILib v%s", GetWPILibVersion());
       gui::EmitRendererInfo();
@@ -381,12 +381,12 @@ void Application(std::string_view saveDir) {
 
     // Welcome / landing page modal
     if (gShowWelcome) {
-      ImGui::OpenPopup("Welcome to D-Bug SysId v3.2");
+      ImGui::OpenPopup("Welcome to D-Bug SysId v4.0");
     }
     ImGui::SetNextWindowSize(ImVec2(520, 0), ImGuiCond_Always);
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
                             ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    if (ImGui::BeginPopupModal("Welcome to D-Bug SysId v3.2",
+    if (ImGui::BeginPopupModal("Welcome to D-Bug SysId v4.0",
                                nullptr,
                                ImGuiWindowFlags_AlwaysAutoResize |
                                    ImGuiWindowFlags_NoMove)) {
@@ -450,7 +450,7 @@ void Application(std::string_view saveDir) {
     }
   });
 
-  gui::Initialize("D-Bug SysId v3.2", sysid::kAppWindowSize.x,
+  gui::Initialize("D-Bug SysId v4.0", sysid::kAppWindowSize.x,
                   sysid::kAppWindowSize.y, gui::RendererPreference::PREFER_2D);
   gui::Main();
 

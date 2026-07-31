@@ -13,6 +13,7 @@
 #include <thread>
 #include <vector>
 
+#include <IconsFontAwesome6.h>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <imgui_stdlib.h>
@@ -311,14 +312,23 @@ std::string Analyzer::GenerateCodeSnippet() const {
           kp, kd);
     } else if (m_selectedTargetFramework == 1) { // CTRE
       java += std::format(
+          "// CTRE Phoenix 6 - Motion Magic / Position / Velocity Closed Loop\n"
+          "// These gains are already scaled for the 1000Hz (1ms) native control loop.\n"
           "TalonFXConfiguration config = new TalonFXConfiguration();\n"
           "config.Slot0.kS = {:.5G};\n"
           "config.Slot0.kV = {:.5G};\n"
-          "config.Slot0.kA = {:.5G};\n"
-          "config.Slot0.kG = {:.5G};\n"
+          "config.Slot0.kA = {:.5G};\n",
+          ks, kv, ka);
+      if (isElevator || isArm) {
+          java += std::format("config.Slot0.kG = {:.5G};\n", kg);
+      }
+      java += std::format(
           "config.Slot0.kP = {:.5G};\n"
-          "config.Slot0.kD = {:.5G};\n",
-          ks, kv, ka, kg, kp, kd);
+          "config.Slot0.kD = {:.5G};\n"
+          "\n"
+          "// Apply the configuration\n"
+          "// motor.getConfigurator().apply(config);\n",
+          kp, kd);
       if (isArm) {
         java += std::format("// Arm horizontal angle offset: {:.5G}\n", offset);
       }
@@ -811,24 +821,34 @@ void Analyzer::DisplayCodeSnippetOptions() {
 
 
 void Analyzer::DisplaySystemDynamicsCard(double Kv, double Ka) {
-  auto bodeResult = sysid::CalculateBodeAnalysis(Kv, Ka);
-  if (bodeResult.isValid) {
-    ImGui::Spacing();
-    ImGui::SeparatorText("System Dynamics & Stability");
-    ImGui::Text("  \u2022 Bandwidth (w_c):    %.2f Hz (%.2f rad/s)",
-                bodeResult.bandwidthHz, bodeResult.bandwidthRadPerSec);
-    ImGui::Text("  \u2022 Time Constant (tau): %.2f ms", bodeResult.timeConstantSec * 1000.0);
-    ImGui::Text("  \u2022 Continuous Pole (s): %.2f rad/s", bodeResult.poleLocation);
-    ImGui::Text("  \u2022 95%% Settling Time:  %.2f ms", bodeResult.settlingTimeSec * 1000.0);
+  ImGui::Spacing();
+  ImGui::SeparatorText("System Dynamics & Stability");
 
-    double tau = bodeResult.timeConstantSec;
-    double K = 1.0 / Kv;
-    double T = m_settings.preset.period.value();
+  bool isPhysical = (Kv > 0.0 && Ka > 0.0);
+  if (!isPhysical) {
+    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), 
+                       "%s Non-physical gains detected (Kv or Ka <= 0). System is unstable or model is invalid.",
+                       ICON_FA_TRIANGLE_EXCLAMATION);
+  }
 
-    double z_pole = std::exp(-T / tau);
+  double tau = (Ka != 0.0 && Kv != 0.0) ? Ka / Kv : 0.0;
+  double K = (Kv != 0.0) ? 1.0 / Kv : 0.0;
+  double T = m_settings.preset.period.value();
+  double z_pole = (tau != 0.0) ? std::exp(-T / tau) : 0.0;
 
-    ImGui::Spacing();
-    ImGui::Text("Transfer Functions:");
+  if (isPhysical) {
+    auto bodeResult = sysid::CalculateBodeAnalysis(Kv, Ka);
+    if (bodeResult.isValid) {
+      ImGui::Text("  \u2022 Bandwidth (w_c):    %.2f Hz (%.2f rad/s)",
+                  bodeResult.bandwidthHz, bodeResult.bandwidthRadPerSec);
+      ImGui::Text("  \u2022 Time Constant (tau): %.2f ms", bodeResult.timeConstantSec * 1000.0);
+      ImGui::Text("  \u2022 Continuous Pole (s): %.2f rad/s", bodeResult.poleLocation);
+      ImGui::Text("  \u2022 95%% Settling Time:  %.2f ms", bodeResult.settlingTimeSec * 1000.0);
+    }
+  }
+
+  ImGui::Spacing();
+  if (ImGui::TreeNodeEx("Transfer Functions", ImGuiTreeNodeFlags_DefaultOpen)) {
     ImGui::Text("  \u2022 System Gain (K):     %.5G", K);
     if (m_settings.type == FeedbackControllerLoopType::kPosition) {
       ImGui::Text("  \u2022 G(s) [Position]:     %.5G / (s * (%.5G s + 1))", K, tau);
@@ -839,8 +859,39 @@ void Analyzer::DisplaySystemDynamicsCard(double Kv, double Ka) {
       double z_num = K * (1.0 - z_pole);
       ImGui::Text("  \u2022 G(z) [Velocity]:     %.5G / (z - %.5G)", z_num, z_pole);
     }
-    ImGui::Text("                         (Ts = %.1f ms)", T * 1000.0);
+    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "                         (Ts = %.1f ms)", T * 1000.0);
+    ImGui::TreePop();
+  }
 
+  ImGui::Spacing();
+  if (ImGui::TreeNodeEx("State-Space Models", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (m_settings.type == FeedbackControllerLoopType::kPosition) {
+      ImGui::Text("Continuous (A, B, C, D):");
+      ImGui::Text("  A = [ 0, 1 ; 0, %.5G ]   B = [ 0 ; %.5G ]", -Kv/Ka, 1.0/Ka);
+      ImGui::Text("  C = [ 1, 0 ]                 D = [ 0 ]");
+      
+      ImGui::Spacing();
+      ImGui::Text("Discrete (Ad, Bd, Cd, Dd):");
+      double ad12 = tau * (1.0 - z_pole);
+      double bd1 = K * (T - tau * (1.0 - z_pole));
+      double bd2 = K * (1.0 - z_pole);
+      ImGui::Text("  Ad = [ 1, %.5G ; 0, %.5G ]   Bd = [ %.5G ; %.5G ]", ad12, z_pole, bd1, bd2);
+      ImGui::Text("  Cd = [ 1, 0 ]                           Dd = [ 0 ]");
+    } else {
+      ImGui::Text("Continuous (A, B, C, D):");
+      ImGui::Text("  A = [ %.5G ]   B = [ %.5G ]", -Kv/Ka, 1.0/Ka);
+      ImGui::Text("  C = [ 1 ]          D = [ 0 ]");
+      
+      ImGui::Spacing();
+      ImGui::Text("Discrete (Ad, Bd, Cd, Dd):");
+      double bd = K * (1.0 - z_pole);
+      ImGui::Text("  Ad = [ %.5G ]   Bd = [ %.5G ]", z_pole, bd);
+      ImGui::Text("  Cd = [ 1 ]          Dd = [ 0 ]");
+    }
+    ImGui::TreePop();
+  }
+
+  if (isPhysical) {
     ImGui::Spacing();
     ImGui::Checkbox("Show Theoretical Bode Plot", &m_showBodePlot);
   }
@@ -1002,49 +1053,51 @@ void Analyzer::DisplayFeedbackGains() {
   }
 
   ImGui::Spacing();
+  ImGui::SeparatorText("Optimal Control (LQR) Tuning");
+  sysid::CreateTooltip("LQR computes the mathematically optimal Kp and Kd gains by balancing "
+                       "how quickly you want to reach the target (Q matrix) vs how much voltage "
+                       "you are willing to use (R matrix).");
 
-  // Show Kp and Kd.
-  float beginY = ImGui::GetCursorPosY();
+  std::string p_unit;
+  std::string v_unit;
+  if (m_state != AnalyzerState::kWaitingForData) {
+    p_unit = std::format(" ({})", GetAbbreviation(m_manager->GetUnit()));
+    v_unit = std::format(" ({}/s)", GetAbbreviation(m_manager->GetUnit()));
+  }
+
+  bool changed = false;
+  ImGui::SetNextItemWidth(ImGui::GetFontSize() * 4);
+  if (m_selectedLoopType == 0) {
+    if (DisplayDouble(std::format("Max Position Error [Q]{}", p_unit).c_str(), &m_settings.lqr.qp, false)) {
+      if (m_settings.lqr.qp > 0) changed = true;
+    }
+  }
+
+  ImGui::SetNextItemWidth(ImGui::GetFontSize() * 4);
+  if (DisplayDouble(std::format("Max Velocity Error [Q]{}", v_unit).c_str(), &m_settings.lqr.qv, false)) {
+    if (m_settings.lqr.qv > 0) changed = true;
+  }
+
+  ImGui::SetNextItemWidth(ImGui::GetFontSize() * 4);
+  if (DisplayDouble("Max Control Effort (V) [R]", &m_settings.lqr.r, false)) {
+    if (m_settings.lqr.r > 0) changed = true;
+  }
+
+  if (changed) {
+    UpdateFeedbackGains();
+  }
+
+  ImGui::Spacing();
+  ImGui::Text("Calculated Optimal Gains:");
   ImGui::SetNextItemWidth(ImGui::GetFontSize() * 4);
   DisplayDouble("Kp", &m_Kp);
-
   ImGui::SetNextItemWidth(ImGui::GetFontSize() * 4);
   DisplayDouble("Kd", &m_Kd);
 
-  // Come back to the starting y pos.
-  ImGui::SetCursorPosY(beginY);
-
-  if (m_selectedLoopType == 0) {
-    std::string unit;
-    if (m_state != AnalyzerState::kWaitingForData) {
-      unit = std::format(" ({})", GetAbbreviation(m_manager->GetUnit()));
-    }
-
-    ImGui::SetCursorPosX(ImGui::GetFontSize() * 9);
-    if (DisplayDouble(std::format("Max Position Error{}", unit).c_str(),
-                      &m_settings.lqr.qp, false)) {
-      if (m_settings.lqr.qp > 0) {
-        UpdateFeedbackGains();
-      }
-    }
-  }
-
-  std::string unit;
-  if (m_state != AnalyzerState::kWaitingForData) {
-    unit = std::format(" ({}/s)", GetAbbreviation(m_manager->GetUnit()));
-  }
-
-  ImGui::SetCursorPosX(ImGui::GetFontSize() * 9);
-  if (DisplayDouble(std::format("Max Velocity Error{}", unit).c_str(),
-                    &m_settings.lqr.qv, false)) {
-    if (m_settings.lqr.qv > 0) {
-      UpdateFeedbackGains();
-    }
-  }
-  ImGui::SetCursorPosX(ImGui::GetFontSize() * 9);
-  if (DisplayDouble("Max Control Effort (V)", &m_settings.lqr.r, false)) {
-    if (m_settings.lqr.r > 0) {
-      UpdateFeedbackGains();
-    }
+  if (m_settings.preset == presets::kCTREv6) {
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "  (Scaled for 1000Hz Motion Magic)");
+    sysid::CreateTooltip("These gains are perfectly scaled for the CTRE Phoenix 6 TalonFX 1ms loop period. "
+                         "You can plug these directly into config.Slot0.kP and config.Slot0.kD.");
   }
 }
