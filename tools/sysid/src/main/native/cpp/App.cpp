@@ -313,7 +313,11 @@ void Application(std::string_view saveDir) {
     }
 
     bool about = false;
+    static bool docs = false;
     if (ImGui::BeginMenu("Info")) {
+      if (ImGui::MenuItem("Documentation")) {
+        docs = true;
+      }
       if (ImGui::MenuItem("About")) {
         about = true;
       }
@@ -366,13 +370,56 @@ void Application(std::string_view saveDir) {
       ImGui::OpenPopup("About");
       about = false;
     }
-    if (ImGui::BeginPopupModal("About")) {
+    if (ImGui::BeginPopupModal("About", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
       ImGui::Text("D-Bug SysId v4.0 - System Identification for Robot Mechanisms");
       ImGui::Separator();
       ImGui::Text("WPILib v%s", GetWPILibVersion());
       gui::EmitRendererInfo();
       ImGui::Separator();
       ImGui::Text("Save location: %s", wpi::glass::GetStorageDir().c_str());
+      if (ImGui::Button("Close")) {
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::EndPopup();
+    }
+
+    if (docs) {
+      ImGui::OpenPopup("SysId Documentation & Theory");
+      docs = false;
+    }
+    ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
+    if (ImGui::BeginPopupModal("SysId Documentation & Theory", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+      if (ImGui::BeginChild("DocsScrollRegion", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()))) {
+        ImGui::TextWrapped("The primary purpose of D-Bug SysId is to characterize the physical behavior of robot mechanisms (like elevators, arms, and drivetrains) and calculate optimal control gains for them.");
+        
+        ImGui::Spacing();
+        ImGui::SeparatorText("Mathematical Theory");
+        ImGui::BulletText("Feedforward Constants (Ks, Kg, Kv, Ka): Used to predict the necessary voltage to achieve a desired state based on physical modeling.");
+        ImGui::Indent();
+        ImGui::BulletText("Ks (Static Friction): Voltage required to break static friction.");
+        ImGui::BulletText("Kg (Gravity): Voltage required to exactly counteract gravity and hold an elevator or arm still.");
+        ImGui::BulletText("Kv (Velocity): Voltage required to maintain a constant velocity of 1 unit/s.");
+        ImGui::BulletText("Ka (Acceleration): Voltage required to induce an acceleration of 1 unit/s^2.");
+        ImGui::Unindent();
+        
+        ImGui::Spacing();
+        ImGui::BulletText("State-Space Modeling:");
+        ImGui::TextWrapped("SysId automatically generates State-Space matrices representing the physical system. This represents a system as a set of first-order differential equations: x_dot = Ax + Bu. These continuous and discrete-time matrices can be used for advanced custom controllers.");
+        
+        ImGui::Spacing();
+        ImGui::BulletText("LQR Tuning (Optimal Control):");
+        ImGui::TextWrapped("In the Feedback Analysis section, SysId uses a Linear-Quadratic Regulator to compute the optimal Kp and Kd gains. By balancing the State Cost (Max allowed Error) and Effort Cost (Max Control Voltage), it mathematically guarantees the most efficient PID response to achieve your specified tolerance without exceeding actuator limits.");
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("How to Use the Tool");
+        ImGui::BulletText("1. Load Data: Open D-Bug SysId and drag and drop your .wpilog file into the UI.");
+        ImGui::BulletText("2. Analyze Feedforward: Select the mechanism type and units. SysId graphs the velocity/acceleration responses and calculates Ks, Kg, Kv, and Ka.");
+        ImGui::BulletText("3. Analyze Feedback: Scroll down to the Optimal Control (LQR) section. Adjust your Error and Effort constraints until you find a balance that suits your mechanism.");
+        ImGui::BulletText("4. Export Code: Select your target framework (e.g. CTRE Phoenix 6) and copy the generated snippet. The snippet includes properly scaled gains ready to paste directly into your robot code.");
+      }
+      ImGui::EndChild();
+      
+      ImGui::Separator();
       if (ImGui::Button("Close")) {
         ImGui::CloseCurrentPopup();
       }
